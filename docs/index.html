@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Documentation | Johns Hopkins Medicine Global Assets CDN</title>
+	<link rel="icon" type="image/x-icon" href="../img/favicon.ico">
+	<link rel="stylesheet" href="../css/site.css">
+</head>
+<body>
+	<!-- Top Branding Bar -->
+	<header class="site-header">
+		<div class="container header-inner">
+			<a href="../index.html" class="brand brand-link">
+				<img src="../img/logo.png" alt="Johns Hopkins Medicine" class="brand-logo">
+				<span class="brand-divider" aria-hidden="true"></span>
+				<div class="brand-text">
+					<h1 class="brand-title">Global Assets Documentation</h1>
+				</div>
+			</a>
+
+			<div class="header-actions">
+				<a href="../index.html" class="btn-icon" title="Back to Global Assets Portal">
+					<svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<line x1="19" y1="12" x2="5" y2="12"></line>
+						<polyline points="12 19 5 12 12 5"></polyline>
+					</svg>
+					<span>Back to Assets Portal</span>
+				</a>
+				<button type="button" class="btn-icon" id="themeToggleBtn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+					<svg id="themeIconSun" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" hidden>
+						<circle cx="12" cy="12" r="5"></circle>
+						<line x1="12" y1="1" x2="12" y2="3"></line>
+						<line x1="12" y1="21" x2="12" y2="23"></line>
+						<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+						<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+						<line x1="1" y1="12" x2="3" y2="12"></line>
+						<line x1="21" y1="12" x2="23" y2="12"></line>
+						<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+						<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+					</svg>
+					<svg id="themeIconMoon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+	</header>
+
+	<!-- Hero Section with Role Switcher -->
+	<section class="hero-section docs-hero">
+		<div class="container">
+			<div class="hero-content">
+				<h2>How to Use Johns Hopkins Medicine Global Assets</h2>
+				<p>Complete guide for both <strong>Users</strong> consuming CDN scripts/styles and <strong>Developers</strong> maintaining the repository.</p>
+
+				<div class="docs-role-tabs" role="navigation" aria-label="Documentation Sections">
+					<a href="#user-guide" class="docs-role-tab active" data-target="user-guide">
+						<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+							<circle cx="12" cy="7" r="4"></circle>
+						</svg>
+						<span>For Users (Consuming CDN Assets)</span>
+					</a>
+					<a href="#developer-guide" class="docs-role-tab" data-target="developer-guide">
+						<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="16 18 22 12 16 6"></polyline>
+							<polyline points="8 6 2 12 8 18"></polyline>
+						</svg>
+						<span>For Developers (Adding &amp; Hosting Assets)</span>
+					</a>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Main Documentation Content -->
+	<main class="main-content container docs-layout">
+		<!-- Sticky Sidebar Table of Contents -->
+		<aside class="docs-sidebar">
+			<nav class="docs-toc" aria-label="Table of Contents">
+				<div class="toc-group">
+					<span class="toc-heading">User Guide</span>
+					<a href="#user-guide" class="toc-link">1. Overview for Users</a>
+					<a href="#user-search" class="toc-link">2. Searching &amp; Filtering</a>
+					<a href="#user-versions" class="toc-link">3. Selecting Versions</a>
+					<a href="#user-copying" class="toc-link">4. Copying URLs &amp; HTML Tags</a>
+					<a href="#user-embedding" class="toc-link">5. Embedding in Your Site</a>
+				</div>
+				<div class="toc-group">
+					<span class="toc-heading">Developer Guide</span>
+					<a href="#developer-guide" class="toc-link">1. Architecture &amp; Conventions</a>
+					<a href="#dev-adding-assets" class="toc-link">2. Adding New Libraries/Versions</a>
+					<a href="#dev-local-workflow" class="toc-link">3. Local Development Workflow</a>
+					<a href="#dev-azure-setup" class="toc-link">4. Azure Blob Storage &amp; CORS</a>
+					<a href="#dev-discovery-engine" class="toc-link">5. How Auto-Discovery Works</a>
+				</div>
+			</nav>
+		</aside>
+
+		<!-- Documentation Sections -->
+		<div class="docs-content">
+
+			<!-- ================================================================
+			     SECTION 1: USER GUIDE
+			     ================================================================ -->
+			<section id="user-guide" class="docs-section">
+				<div class="section-banner user-banner">
+					<span class="section-pill">Perspective 01</span>
+					<h2>User Guide &mdash; Consuming Global Assets</h2>
+					<p>For web authors, site builders, and application teams embedding shared JavaScript and CSS libraries from the Johns Hopkins Medicine CDN.</p>
+				</div>
+
+				<div class="docs-card" id="user-search">
+					<h3>1. Searching &amp; Filtering Libraries</h3>
+					<p>The Global Assets Portal provides instant access to approved JavaScript and CSS libraries hosted on Azure Blob Storage.</p>
+					<ul class="docs-list">
+						<li><strong>Instant Search:</strong> Click the search bar (or press <kbd>/</kbd> on your keyboard) and type a library name, version number, or filename &mdash; for example, <code>jquery 5.3</code> or <code>font-awesome</code>.</li>
+						<li><strong>Category Filter Tabs:</strong> Use the filter tabs beneath the search bar to switch between <strong>All Assets</strong>, <strong>JavaScript</strong> (<code>/js/cdn/</code>), or <strong>Stylesheets</strong> (<code>/css/cdn/</code>).</li>
+					</ul>
+				</div>
+
+				<div class="docs-card" id="user-versions">
+					<h3>2. Selecting Library Versions</h3>
+					<p>Each library card groups all available versions of that asset together so you can easily target a specific release.</p>
+					<ul class="docs-list">
+						<li>Use the <strong>Version</strong> dropdown in the top-right corner of any library card to filter that card to a specific version (e.g., <code>v5.3 (Latest)</code> or <code>v4.1</code>).</li>
+						<li>Select <strong>All Versions</strong> to compare all hosted versions side by side.</li>
+					</ul>
+				</div>
+
+				<div class="docs-card" id="user-copying">
+					<h3>3. Copying URLs &amp; HTML Snippets</h3>
+					<p>Every file row offers three quick actions on the right side:</p>
+					<div class="feature-grid">
+						<div class="feature-box">
+							<h4>Copy URL</h4>
+							<p>Copies the raw direct HTTPS link to the file on the JHM Azure CDN (useful for module loaders, CMS fields, or dynamic script loaders).</p>
+						</div>
+						<div class="feature-box">
+							<h4>Copy <code>&lt;script&gt;</code> / <code>&lt;link&gt;</code></h4>
+							<p>Copies a complete, ready-to-paste HTML tag formatted automatically for either JavaScript or CSS.</p>
+						</div>
+						<div class="feature-box">
+							<h4>Open Raw File</h4>
+							<p>Opens the asset directly in a new browser tab so you can inspect the file contents or verify version headers.</p>
+						</div>
+					</div>
+				</div>
+
+				<div class="docs-card" id="user-embedding">
+					<h3>4. Embedding Assets in Your Web Pages</h3>
+					<p>Paste CSS <code>&lt;link&gt;</code> tags inside your document's <code>&lt;head&gt;</code>, and JavaScript <code>&lt;script&gt;</code> tags either in <code>&lt;head&gt;</code> or right before the closing <code>&lt;/body&gt;</code> tag:</p>
+					<pre class="code-block"><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+  &lt;meta charset="UTF-8"&gt;
+  &lt;title&gt;JHM Web Application&lt;/title&gt;
+
+  &lt;!-- Font Awesome Stylesheet from JHM Global Assets CDN --&gt;
+  &lt;link rel="stylesheet" href="https://jhmcdn.blob.core.windows.net/global-assets/css/cdn/font-awesome/5.3/all.min.css"&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+  &lt;!-- jQuery Script from JHM Global Assets CDN --&gt;
+  &lt;script src="https://jhmcdn.blob.core.windows.net/global-assets/js/cdn/jquery/5.3/jquery.min.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+				</div>
+			</section>
+
+			<!-- ================================================================
+			     SECTION 2: DEVELOPER GUIDE
+			     ================================================================ -->
+			<section id="developer-guide" class="docs-section">
+				<div class="section-banner dev-banner">
+					<span class="section-pill">Perspective 02</span>
+					<h2>Developer Guide &mdash; Maintaining &amp; Extending the Repository</h2>
+					<p>For engineers managing the Global Assets codebase, adding new libraries or versions, testing locally, and deploying to Azure Blob Storage.</p>
+				</div>
+
+				<div class="docs-card" id="dev-architecture">
+					<h3>1. Directory Structure &amp; Separation of Concerns</h3>
+					<p>To strictly separate the <strong>Portal UI</strong> files from the <strong>Hosted CDN Libraries</strong>, the repository enforces a clean <code>/cdn/</code> subfolder boundary:</p>
+					<pre class="code-block"><code>/
+├── index.html                                    # Main Global Assets Portal UI
+├── docs/
+│   └── index.html                                # User &amp; Developer Documentation (this page)
+├── img/
+│   ├── favicon.ico                               # Browser tab favicon
+│   └── logo.png                                  # Johns Hopkins Medicine official logo
+├── css/
+│   ├── site.css                                  # Stylesheet for the Portal UI &amp; Docs ONLY
+│   └── cdn/                                      # &lt;-- Hosted CSS CDN Libraries live here
+│       └── font-awesome/
+│           ├── 4.1/
+│           │   └── font-awesome.min.css
+│           └── 5.3/
+│               └── all.min.css
+└── js/
+    ├── site.js                                   # Dynamic discovery, search &amp; copy logic for the UI
+    └── cdn/                                      # &lt;-- Hosted JS CDN Libraries live here
+        └── jquery/
+            ├── 4.1/
+            │   └── jquery.min.js
+            └── 5.3/
+                └── jquery.min.js</code></pre>
+					<p class="docs-note">
+						<strong>Why this matters:</strong> The discovery engine in <code>/js/site.js</code> specifically scans paths matching <code>^(css|js)/cdn/{library}/{version}/{file}$</code>. Portal files like <code>/css/site.css</code>, <code>/js/site.js</code>, and <code>/docs/index.html</code> are automatically excluded from the CDN catalog!
+					</p>
+				</div>
+
+				<div class="docs-card" id="dev-adding-assets">
+					<h3>2. Adding a New Library or Version (Zero Code Changes!)</h3>
+					<p>You do <strong>not</strong> need to edit any HTML or JavaScript to add a new library or version to the UI. Simply follow the folder naming convention:</p>
+					<ol class="docs-list ordered">
+						<li>
+							<strong>For a JavaScript library:</strong> Create a folder at <code>/js/cdn/{library-slug}/{version}/</code> and place your <code>.js</code> file(s) inside.<br>
+							Example: <code>/js/cdn/bootstrap/5.3.2/bootstrap.bundle.min.js</code>
+						</li>
+						<li>
+							<strong>For a CSS library:</strong> Create a folder at <code>/css/cdn/{library-slug}/{version}/</code> and place your <code>.css</code> file(s) inside.<br>
+							Example: <code>/css/cdn/bootstrap/5.3.2/bootstrap.min.css</code>
+						</li>
+						<li>
+							<strong>Upload to Azure Blob Storage:</strong> Upload the new folder into the <code>global-assets</code> container. The moment it is uploaded, clicking <strong>Sync</strong> (or refreshing <code>index.html</code>) will automatically list the library, group its versions, and generate its copy buttons!
+						</li>
+					</ol>
+				</div>
+
+				<div class="docs-card" id="dev-local-workflow">
+					<h3>3. Local Development Workflow</h3>
+					<p>When working locally on your machine, the portal supports automatic local folder discovery:</p>
+					<ul class="docs-list">
+						<li><strong>Recommended (VS Code Live Server / Local HTTP Server):</strong> Run a local development server (such as the VS Code <em>Live Server</em> extension, <code>npx serve</code>, or <code>python -m http.server</code>). When running on <code>localhost</code> or <code>127.0.0.1</code>, <code>/js/site.js</code> automatically crawls your local <code>/css/cdn/</code> and <code>/js/cdn/</code> directory listings. Drop a file in locally, hit refresh, and it appears immediately!</li>
+						<li><strong>Source Switcher in the UI:</strong> Use the <strong>Source</strong> dropdown in the top toolbar to switch between:
+							<ul>
+								<li><code>Auto (Smart Detect)</code> &mdash; Uses local folders on <code>localhost</code>, or Azure Live XML in production.</li>
+								<li><code>Azure Blob Live XML</code> &mdash; Forces the UI (even on <code>localhost</code>) to query the live Azure container at <code>jhmcdn.blob.core.windows.net</code>.</li>
+								<li><code>Local /cdn/ Folders</code> &mdash; Forces the UI to crawl local directories.</li>
+							</ul>
+						</li>
+					</ul>
+				</div>
+
+				<div class="docs-card" id="dev-azure-setup">
+					<h3>4. Azure Blob Storage &amp; CORS Configuration</h3>
+					<p>For live Azure auto-discovery and cross-domain asset loading to work, the Azure Storage Account (<code>jhmcdn</code>) and container (<code>global-assets</code>) are configured as follows:</p>
+					<ul class="docs-list">
+						<li>
+							<strong>Container Public Access Level:</strong> Set the <code>global-assets</code> container access level to <strong>Container (anonymous read access for containers and blobs)</strong>. This enables the public XML listing endpoint:<br>
+							<code>https://jhmcdn.blob.core.windows.net/global-assets?restype=container&amp;comp=list</code>
+						</li>
+						<li>
+							<strong>Resource Sharing (CORS):</strong> Under the <code>jhmcdn</code> Storage Account &rarr; <em>Settings &rarr; Resource sharing (CORS)</em> &rarr; <em>Blob service</em>:
+							<ul>
+								<li><strong>Allowed origins:</strong> <code>*</code></li>
+								<li><strong>Allowed methods:</strong> <code>GET, HEAD, OPTIONS</code></li>
+								<li><strong>Allowed headers / Exposed headers:</strong> <code>*</code></li>
+								<li><strong>Max age:</strong> <code>86400</code></li>
+							</ul>
+						</li>
+					</ul>
+				</div>
+
+				<div class="docs-card" id="dev-discovery-engine">
+					<h3>5. How the 3-Tier Discovery Engine Works (<code>/js/site.js</code>)</h3>
+					<p>Under the hood, <code>/js/site.js</code> uses a resilient 3-tier discovery pipeline:</p>
+					<ol class="docs-list ordered">
+						<li><strong>Tier 1 &mdash; Azure Blob Live XML:</strong> Fetches <code>?restype=container&amp;comp=list</code> (with automatic <code>&lt;NextMarker&gt;</code> pagination support for large containers), parses each <code>&lt;Blob&gt;</code> node, extracts file size and last-modified date, and filters for <code>^(css|js)/cdn/</code> paths.</li>
+						<li><strong>Tier 2 &mdash; Local Dev Server Crawler:</strong> Recursively crawls directory links inside <code>/css/cdn/</code> and <code>/js/cdn/</code> when running on a local dev server.</li>
+						<li><strong>Tier 3 &mdash; Offline Fallback Preview:</strong> Provides a built-in fallback preview if opened directly via <code>file://</code> without network connectivity.</li>
+					</ol>
+				</div>
+			</section>
+
+		</div>
+	</main>
+
+	<!-- Footer -->
+	<footer class="site-footer">
+		<div class="container footer-inner">
+			<div>
+				<strong>Johns Hopkins Medicine</strong> &mdash; Global Assets CDN Documentation
+			</div>
+			<div class="footer-links">
+				<a href="../index.html">Back to Global Assets Portal</a>
+				<span>&bull;</span>
+				<a href="https://jhmcdn.blob.core.windows.net/global-assets?restype=container&amp;comp=list" target="_blank" rel="noopener">View Azure Container XML</a>
+			</div>
+		</div>
+	</footer>
+
+	<script>
+		(function () {
+			// Theme synchronization with main portal
+			const themeToggleBtn = document.getElementById('themeToggleBtn');
+			const themeIconSun = document.getElementById('themeIconSun');
+			const themeIconMoon = document.getElementById('themeIconMoon');
+
+			function applyTheme(theme) {
+				document.documentElement.setAttribute('data-theme', theme);
+				localStorage.setItem('jhm_assets_theme', theme);
+				if (theme === 'dark') {
+					themeIconSun.hidden = false;
+					themeIconMoon.hidden = true;
+				} else {
+					themeIconSun.hidden = true;
+					themeIconMoon.hidden = false;
+				}
+			}
+
+			const savedTheme = localStorage.getItem('jhm_assets_theme');
+			const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+			applyTheme(savedTheme || (prefersDark ? 'dark' : 'light'));
+
+			themeToggleBtn.addEventListener('click', () => {
+				const current = document.documentElement.getAttribute('data-theme');
+				applyTheme(current === 'dark' ? 'light' : 'dark');
+			});
+
+			// Highlight active role tab on click
+			const roleTabs = document.querySelectorAll('.docs-role-tab');
+			roleTabs.forEach((tab) => {
+				tab.addEventListener('click', () => {
+					roleTabs.forEach((t) => t.classList.remove('active'));
+					tab.classList.add('active');
+				});
+			});
+		})();
+	</script>
+</body>
+</html>

@@ -3,9 +3,182 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Global Assets</title>
+	<title>Johns Hopkins Medicine | Global Assets CDN</title>
+	<link rel="icon" type="image/x-icon" href="img/favicon.ico">
+	<link rel="stylesheet" href="css/site.css">
 </head>
 <body>
-	<h1>Johns Hopkins Medicine Global Assets</h1>
+	<!-- Top Branding Bar -->
+	<header class="site-header">
+		<div class="container header-inner">
+			<div class="brand">
+				<img src="img/logo.png" alt="Johns Hopkins Medicine" class="brand-logo">
+				<span class="brand-divider" aria-hidden="true"></span>
+				<div class="brand-text">
+					<h1 class="brand-title">Global Assets Repository</h1>
+				</div>
+			</div>
+
+			<div class="header-actions">
+				<div class="status-pill" id="sourceStatusPill" title="Current Asset Discovery Source">
+					<span class="status-dot" id="sourceStatusDot"></span>
+					<span id="sourceStatusText">Connecting...</span>
+				</div>
+				<a href="docs/index.html#user-guide" class="btn-icon" title="User Documentation">
+					<svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+						<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+					</svg>
+					<span>Docs</span>
+				</a>
+				<button type="button" class="btn-icon" id="refreshBtn" title="Refresh Assets">
+					<svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<polyline points="23 4 23 10 17 10"></polyline>
+						<polyline points="1 20 1 14 7 14"></polyline>
+						<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+					</svg>
+					<span>Sync</span>
+				</button>
+				<button type="button" class="btn-icon" id="themeToggleBtn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+					<svg id="themeIconSun" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" hidden>
+						<circle cx="12" cy="12" r="5"></circle>
+						<line x1="12" y1="1" x2="12" y2="3"></line>
+						<line x1="12" y1="21" x2="12" y2="23"></line>
+						<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+						<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+						<line x1="1" y1="12" x2="3" y2="12"></line>
+						<line x1="21" y1="12" x2="23" y2="12"></line>
+						<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+						<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+					</svg>
+					<svg id="themeIconMoon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+					</svg>
+				</button>
+			</div>
+		</div>
+	</header>
+
+	<!-- Hero Search & Configuration Section -->
+	<section class="hero-section">
+		<div class="container">
+			<div class="hero-content">
+				<h2>Centralized CDN Scripts &amp; Stylesheets</h2>
+				<p>Browse, filter, and copy production-ready JavaScript and CSS dependencies hosted on Azure Blob Storage.</p>
+
+				<!-- Search Box -->
+				<div class="search-bar-wrapper">
+					<svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="11" cy="11" r="8"></circle>
+						<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+					</svg>
+					<input
+						type="search"
+						id="searchInput"
+						class="search-input"
+						placeholder="Search libraries, versions, or file names (e.g., jquery, font-awesome, 5.3)..."
+						autocomplete="off"
+						aria-label="Search CDN assets"
+					>
+					<kbd class="search-shortcut" id="searchShortcutHint" title="Press / to focus search">/</kbd>
+				</div>
+
+				<!-- Toolbar: Category Filters + CDN Root Config -->
+				<div class="controls-bar">
+					<div class="filter-tabs" role="tablist" aria-label="Asset category filter">
+						<button type="button" class="filter-tab active" data-filter="all" role="tab" aria-selected="true">
+							All Assets <span class="tab-count" id="countAll">0</span>
+						</button>
+						<button type="button" class="filter-tab" data-filter="js" role="tab" aria-selected="false">
+							<span class="badge-dot badge-js"></span>
+							JavaScript <span class="tab-count" id="countJs">0</span>
+						</button>
+						<button type="button" class="filter-tab" data-filter="css" role="tab" aria-selected="false">
+							<span class="badge-dot badge-css"></span>
+							Stylesheets <span class="tab-count" id="countCss">0</span>
+						</button>
+					</div>
+
+					<div class="cdn-config">
+						<label for="sourceModeSelect" class="config-label">Source:</label>
+						<select id="sourceModeSelect" class="config-select" title="Choose how assets are discovered">
+							<option value="auto">Auto (Smart Detect)</option>
+							<option value="azure">Azure Blob Live XML</option>
+							<option value="local">Local /cdn/ Folders</option>
+						</select>
+
+						<label for="baseUrlInput" class="config-label">CDN Base URL:</label>
+						<div class="base-url-group">
+							<input
+								type="url"
+								id="baseUrlInput"
+								class="base-url-input"
+								value="https://jhmcdn.blob.core.windows.net/global-assets"
+								title="Root URL used when generating Copy links and HTML tags"
+							>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- Main Content Area -->
+	<main class="main-content container">
+		<!-- Stats Summary Bar -->
+		<div class="summary-bar" id="summaryBar">
+			<div class="summary-left">
+				<span id="resultsSummaryText">Loading libraries...</span>
+			</div>
+			<div class="summary-right">
+				<span class="structure-hint">
+					Convention: <code>/css/cdn/{library}/{version}/{file}</code> &amp; <code>/js/cdn/{library}/{version}/{file}</code>
+				</span>
+			</div>
+		</div>
+
+		<!-- Loading Skeleton -->
+		<div id="loadingState" class="loading-state">
+			<div class="spinner"></div>
+			<p>Discovering assets from repository...</p>
+		</div>
+
+		<!-- Empty State / Instructions -->
+		<div id="emptyState" class="empty-state" hidden>
+			<div class="empty-icon">
+				<svg viewBox="0 0 24 24" width="44" height="44" stroke="currentColor" stroke-width="1.5" fill="none">
+					<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+					<line x1="9" y1="14" x2="15" y2="14"></line>
+				</svg>
+			</div>
+			<h3 id="emptyStateTitle">No matching assets found</h3>
+			<p id="emptyStateDesc">Try adjusting your search query or category filter, or upload files under <code>/css/cdn/</code> or <code>/js/cdn/</code>.</p>
+			<button type="button" class="btn-secondary" id="resetFiltersBtn">Reset Search &amp; Filters</button>
+		</div>
+
+		<!-- Library Cards Grid -->
+		<div id="librariesGrid" class="libraries-grid" aria-live="polite"></div>
+	</main>
+
+	<!-- Footer -->
+	<footer class="site-footer">
+		<div class="container footer-inner">
+			<div>
+				<strong>Johns Hopkins Medicine</strong> &mdash; Global Assets CDN Portal
+			</div>
+			<div class="footer-links">
+				<a href="docs/index.html#user-guide">User Guide</a>
+				<span>&bull;</span>
+				<a href="docs/index.html#developer-guide">Developer Guide</a>
+				<span>&bull;</span>
+				<a href="https://jhmcdn.blob.core.windows.net/global-assets?restype=container&amp;comp=list" target="_blank" rel="noopener">View Azure Container XML</a>
+			</div>
+		</div>
+	</footer>
+
+	<!-- Copy Toast Notification -->
+	<div id="toastContainer" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
+
+	<script src="js/site.js"></script>
 </body>
 </html>
