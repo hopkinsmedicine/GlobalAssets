@@ -95,9 +95,6 @@
 		sourceStatusDot: document.getElementById('sourceStatusDot'),
 		sourceStatusText: document.getElementById('sourceStatusText'),
 		refreshBtn: document.getElementById('refreshBtn'),
-		themeToggleBtn: document.getElementById('themeToggleBtn'),
-		themeIconSun: document.getElementById('themeIconSun'),
-		themeIconMoon: document.getElementById('themeIconMoon'),
 		resultsSummaryText: document.getElementById('resultsSummaryText'),
 		loadingState: document.getElementById('loadingState'),
 		emptyState: document.getElementById('emptyState'),
@@ -114,45 +111,13 @@
 
 	/**
 	 * Main entry point called once the HTML document finishes loading.
-	 * Sets up the visual theme, detects the base URL, attaches event listeners,
-	 * and kicks off the initial asset discovery scan.
+	 * Detects the base URL, attaches event listeners, and kicks off the
+	 * initial asset discovery scan.
 	 */
 	function init() {
-		initTheme();
 		initBaseUrl();
 		bindEvents();
 		discoverAssets();
-	}
-
-	/**
-	 * Determines whether to start in Light or Dark mode.
-	 * Checks `localStorage` first in case the user previously chose a theme;
-	 * otherwise falls back to the user's operating system preference.
-	 */
-	function initTheme() {
-		const savedTheme = localStorage.getItem('jhm_assets_theme');
-		const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-		const theme = savedTheme || (prefersDark ? 'dark' : 'light');
-		applyTheme(theme);
-	}
-
-	/**
-	 * Applies the chosen theme ('light' or 'dark') to the root `<html>` element
-	 * via `data-theme="..."` (which CSS variables in `site.css` respond to),
-	 * saves the choice to `localStorage`, and swaps the Sun/Moon button icon.
-	 *
-	 * @param {'light'|'dark'} theme - The theme to activate.
-	 */
-	function applyTheme(theme) {
-		document.documentElement.setAttribute('data-theme', theme);
-		localStorage.setItem('jhm_assets_theme', theme);
-		if (theme === 'dark') {
-			els.themeIconSun.hidden = false;
-			els.themeIconMoon.hidden = true;
-		} else {
-			els.themeIconSun.hidden = true;
-			els.themeIconMoon.hidden = false;
-		}
 	}
 
 	/**
@@ -179,7 +144,7 @@
 
 	/**
 	 * Registers all top-level UI event listeners (search bar, keyboard shortcuts,
-	 * category filter tabs, source dropdown, base URL input, sync button, and theme toggle).
+	 * category filter tabs, source dropdown, base URL input, and sync button).
 	 */
 	function bindEvents() {
 		// 1. Live Search Input: re-renders the grid on every keystroke
@@ -197,17 +162,17 @@
 			}
 		});
 
-		// 3. Category Filter Tabs ('All Assets', 'JavaScript', 'Stylesheets')
+		// 3. Category Filter Buttons ('All Assets', 'JavaScript', 'Stylesheets')
 		els.filterTabs.forEach((tab) => {
 			tab.addEventListener('click', () => {
-				// First, remove the active highlight from all tabs
+				// First, remove the active highlight and aria-pressed state from all buttons
 				els.filterTabs.forEach((t) => {
 					t.classList.remove('active');
-					t.setAttribute('aria-selected', 'false');
+					t.setAttribute('aria-pressed', 'false');
 				});
-				// Then highlight the clicked tab and update state.activeFilter
+				// Then highlight the clicked button and update state.activeFilter
 				tab.classList.add('active');
-				tab.setAttribute('aria-selected', 'true');
+				tab.setAttribute('aria-pressed', 'true');
 				state.activeFilter = tab.dataset.filter;
 				render();
 			});
@@ -239,15 +204,10 @@
 			els.filterTabs.forEach((t) => {
 				const isAll = t.dataset.filter === 'all';
 				t.classList.toggle('active', isAll);
-				t.setAttribute('aria-selected', isAll ? 'true' : 'false');
+				t.setAttribute('aria-pressed', isAll ? 'true' : 'false');
 			});
 			render();
-		});
-
-		// 8. Dark / Light Mode Toggle Button
-		els.themeToggleBtn.addEventListener('click', () => {
-			const current = document.documentElement.getAttribute('data-theme');
-			applyTheme(current === 'dark' ? 'light' : 'dark');
+			els.searchInput.focus();
 		});
 	}
 
@@ -828,22 +788,30 @@
 			.map((verObj) => verObj.files.map((file) => renderFileRow(lib, file)).join(''))
 			.join('');
 
+		// Create a valid HTML ID slug (no colons) for pairing <label for="..."> with <select id="...">
+		const safeDomId = lib.id.replace(/[^a-zA-Z0-9_-]/g, '-');
+
 		return `
-			<article class="library-card" data-lib-id="${escapeHtml(lib.id)}">
+			<article class="library-card" data-lib-id="${escapeHtml(lib.id)}" aria-labelledby="title-${escapeHtml(safeDomId)}">
 				<div class="card-header">
 					<div class="card-title-group">
 						<span class="category-badge ${badgeClass}">${badgeLabel}</span>
-						<h3 class="library-name">${escapeHtml(lib.displayName)}</h3>
+						<h3 class="library-name" id="title-${escapeHtml(safeDomId)}">${escapeHtml(lib.displayName)}</h3>
 						<code class="library-path-chip">${escapeHtml(folderPrefix)}</code>
 					</div>
 					<div class="version-controls">
-						<label class="version-label" for="ver-${escapeHtml(lib.id)}">Version:</label>
-						<select id="ver-${escapeHtml(lib.id)}" class="version-select" data-lib-id="${escapeHtml(lib.id)}">
+						<label class="version-label" for="ver-${escapeHtml(safeDomId)}">Version:</label>
+						<select
+							id="ver-${escapeHtml(safeDomId)}"
+							class="version-select"
+							data-lib-id="${escapeHtml(lib.id)}"
+							aria-label="Filter ${escapeHtml(lib.displayName)} (${badgeLabel}) by version"
+						>
 							${versionOptions}
 						</select>
 					</div>
 				</div>
-				<div class="file-list">
+				<div class="file-list" role="list" aria-label="${escapeHtml(lib.displayName)} files">
 					${rowsHtml}
 				</div>
 			</article>
@@ -869,10 +837,13 @@
 		if (file.lastModified) metaParts.push(`Updated ${formatShortDate(file.lastModified)}`);
 		const metaHtml = metaParts.length > 0 ? `<span class="file-meta">&bull; ${escapeHtml(metaParts.join(' • '))}</span>` : '';
 
+		const tagKind = lib.type === 'js' ? 'script tag' : 'stylesheet link tag';
+		const contextDesc = `${lib.displayName} v${file.version} (${file.fileName})`;
+
 		// Note: We store the exact string to copy inside `data-copy-text="..."` attributes
 		// on the buttons so `bindCardEvents()` can read it when clicked.
 		return `
-			<div class="file-row">
+			<div class="file-row" role="listitem">
 				<div class="file-info">
 					<div class="file-primary">
 						<span class="version-tag">v${escapeHtml(file.version)}</span>
@@ -886,10 +857,11 @@
 						type="button"
 						class="btn-copy btn-copy-primary"
 						data-copy-text="${escapeHtml(fullUrl)}"
-						data-copy-label="CDN URL"
+						data-copy-label="CDN URL for ${escapeHtml(contextDesc)}"
+						aria-label="Copy CDN URL for ${escapeHtml(contextDesc)}"
 						title="Copy direct CDN URL to clipboard"
 					>
-						<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
 							<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
 							<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
 						</svg>
@@ -899,10 +871,11 @@
 						type="button"
 						class="btn-copy"
 						data-copy-text="${escapeHtml(htmlSnippet)}"
-						data-copy-label="HTML Tag"
+						data-copy-label="HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
+						aria-label="Copy HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
 						title="Copy HTML snippet to clipboard"
 					>
-						<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
 							<polyline points="16 18 22 12 16 6"></polyline>
 							<polyline points="8 6 2 12 8 18"></polyline>
 						</svg>
@@ -914,9 +887,9 @@
 						rel="noopener"
 						class="btn-open-raw"
 						title="Open raw file in new tab"
-						aria-label="Open ${escapeHtml(file.fileName)} in new tab"
+						aria-label="Open raw file ${escapeHtml(contextDesc)} in a new tab"
 					>
-						<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
 							<polyline points="15 3 21 3 21 9"></polyline>
 							<line x1="10" y1="14" x2="21" y2="3"></line>
@@ -1109,7 +1082,7 @@
 		const toast = document.createElement('div');
 		toast.className = 'toast';
 		toast.innerHTML = `
-			<svg viewBox="0 0 24 24" width="16" height="16" stroke="#F2A900" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+			<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="16" height="16" stroke="#F2A900" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
 				<polyline points="20 6 9 17 4 12"></polyline>
 			</svg>
 			<span>${escapeHtml(message)}</span>
