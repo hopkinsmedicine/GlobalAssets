@@ -197,21 +197,52 @@
 				</div>
 
 				<div class="docs-card" id="dev-adding-assets">
-					<h3>2. Adding a New Library or Version (Zero Code Changes!)</h3>
-					<p>You do <strong>not</strong> need to edit any HTML or JavaScript to add a new library or version to the UI. Simply follow the folder naming convention:</p>
+					<h3>2. Step-by-Step: Adding a New Library Directory or Version</h3>
+					<p>Because <code>/js/site.js</code> dynamically scans all folders matching <code>/{css|js}/cdn/{directory-name}/{version}/{file}</code>, you do <strong>not</strong> need to make any code changes to add a brand-new asset directory (beyond <code>jquery</code> or <code>font-awesome</code>) or a new version.</p>
+
+					<h4>Scenario A: Adding Any New Directory or Version (Zero Code Changes)</h4>
 					<ol class="docs-list ordered">
 						<li>
-							<strong>For a JavaScript library:</strong> Create a folder at <code>/js/cdn/{library-slug}/{version}/</code> and place your <code>.js</code> file(s) inside.<br>
-							Example: <code>/js/cdn/bootstrap/5.3.2/bootstrap.bundle.min.js</code>
+							<strong>Step 1 &mdash; Create the new library folder inside <code>/js/cdn/</code> or <code>/css/cdn/</code>:</strong><br>
+							For example, to add a new <code>scripts</code> directory for internal JS or a <code>bootstrap</code> directory for CSS:<br>
+							<code>/js/cdn/scripts/</code> or <code>/css/cdn/bootstrap/</code>
 						</li>
 						<li>
-							<strong>For a CSS library:</strong> Create a folder at <code>/css/cdn/{library-slug}/{version}/</code> and place your <code>.css</code> file(s) inside.<br>
-							Example: <code>/css/cdn/bootstrap/5.3.2/bootstrap.min.css</code>
+							<strong>Step 2 &mdash; Create a version subfolder inside it:</strong><br>
+							Every asset directory must contain at least one version subfolder (e.g., <code>1.0</code>, <code>5.3.2</code>, or <code>latest</code>):<br>
+							<code>/js/cdn/scripts/1.0/</code> or <code>/css/cdn/bootstrap/5.3.2/</code>
 						</li>
 						<li>
-							<strong>Upload to Azure Blob Storage:</strong> Upload the new folder into the <code>global-assets</code> container. The moment it is uploaded, clicking <strong>Sync</strong> (or refreshing <code>index.html</code>) will automatically list the library, group its versions, and generate its copy buttons!
+							<strong>Step 3 &mdash; Place your <code>.js</code> or <code>.css</code> file(s) inside that version folder:</strong><br>
+							<code>/js/cdn/scripts/1.0/custom-header.js</code><br>
+							<code>/css/cdn/bootstrap/5.3.2/bootstrap.min.css</code>
+						</li>
+						<li>
+							<strong>Step 4 &mdash; Refresh Locally or Upload to Azure:</strong>
+							<ul>
+								<li><strong>On <code>localhost</code> (VS Code Live Server):</strong> Simply refresh your browser tab. The local folder crawler will immediately detect the new directory, create a new library card (automatically capitalizing the folder name and converting hyphens to spaces), and generate the Copy buttons.</li>
+								<li><strong>In Azure Blob Storage:</strong> Upload the folder into the <code>global-assets</code> container and click <strong>Sync</strong> (or refresh <code>index.html</code>).</li>
+							</ul>
 						</li>
 					</ol>
+
+					<h4 style="margin-top: 1.25rem;">Scenario B: Optional Code Customizations in <code>/js/site.js</code></h4>
+					<p>You only need to touch <code>/js/site.js</code> if you want custom display formatting or offline fallback support:</p>
+					<ul class="docs-list">
+						<li>
+							<strong>Custom Card Title Capitalization (<code>formatLibraryDisplayName</code>):</strong><br>
+							By default, a folder named <code>jhm-analytics</code> is automatically formatted as <strong>"Jhm Analytics"</strong>. If you want special acronym casing (like <strong>"JHM Analytics"</strong>), add an entry to the <code>knownNames</code> object inside <code>formatLibraryDisplayName(slug)</code> in <code>/js/site.js</code>:
+							<pre class="code-block" style="margin-top: 0.4rem;"><code>const knownNames = {
+  'jquery': 'jQuery',
+  'font-awesome': 'Font Awesome',
+  'jhm-analytics': 'JHM Analytics' // &lt;-- Custom display title
+};</code></pre>
+						</li>
+						<li>
+							<strong>Offline <code>file://</code> Fallback Preview (<code>FALLBACK_PATHS</code>):</strong><br>
+							If someone opens <code>index.html</code> directly from Windows File Explorer (<code>file://</code> protocol without a local web server or internet access), <code>/js/site.js</code> falls back to the <code>FALLBACK_PATHS</code> array at the top of <code>/js/site.js</code>. You can optionally add your new file path there if you want it included in offline previews.
+						</li>
+					</ul>
 				</div>
 
 				<div class="docs-card" id="dev-local-workflow">
