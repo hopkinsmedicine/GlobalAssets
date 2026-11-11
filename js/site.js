@@ -121,14 +121,13 @@
 	}
 
 	/**
-	 * Automatically detects the Azure container root URL if `index.html` is
-	 * currently being viewed directly on `*.blob.core.windows.net`.
+	 * Automatically detects the root Base URL based on where `index.html` is hosted:
 	 *
-	 * Example:
-	 * If the browser is at `https://jhmcdn.blob.core.windows.net/global-assets/index.html`,
-	 * `loc.pathname.split('/').filter(Boolean)` produces `['global-assets', 'index.html']`.
-	 * Taking `parts[0]` gives us the container name (`global-assets`), so the base URL
-	 * is automatically set to `https://jhmcdn.blob.core.windows.net/global-assets`.
+	 * 1. If hosted on Azure Blob Storage (`*.blob.core.windows.net`):
+	 *    Extracts the container name from the URL path (e.g., `https://jhmcdn.blob.core.windows.net/global-assets`).
+	 * 2. If running on a local dev server (`localhost` or `127.0.0.1`):
+	 *    Uses the local server root URL (e.g., `http://127.0.0.1:5500`) so clicking "Open Raw File"
+	 *    or "Copy URL" points directly to the local files during local development.
 	 */
 	function initBaseUrl() {
 		const loc = window.location;
@@ -139,7 +138,24 @@
 				state.baseUrl = `${loc.origin}/${parts[0]}`;
 				els.baseUrlInput.value = state.baseUrl;
 			}
+		} else if (['localhost', '127.0.0.1'].includes(loc.hostname)) {
+			state.baseUrl = getLocalBaseUrl();
+			els.baseUrlInput.value = state.baseUrl;
 		}
+	}
+
+	/**
+	 * Computes the root directory URL when running on `localhost` / `127.0.0.1`.
+	 * For example, if viewing `http://127.0.0.1:5500/index.html`, this returns `http://127.0.0.1:5500`.
+	 * If viewing inside a subfolder `http://127.0.0.1:5500/GlobalAssets/index.html`,
+	 * it strips `/index.html` and returns `http://127.0.0.1:5500/GlobalAssets`.
+	 *
+	 * @returns {string} The local base URL without a trailing slash.
+	 */
+	function getLocalBaseUrl() {
+		const loc = window.location;
+		const cleanPath = loc.pathname.replace(/\/index\.html$/i, '').replace(/\/+$/, '');
+		return `${loc.origin}${cleanPath}`;
 	}
 
 	/**
@@ -181,6 +197,17 @@
 		// 4. Discovery Source Dropdown ('auto', 'azure', 'local')
 		els.sourceModeSelect.addEventListener('change', (e) => {
 			state.sourceMode = e.target.value;
+
+			// Automatically sync the Base URL input when switching between Azure and Local on localhost
+			const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+			if (state.sourceMode === 'azure') {
+				state.baseUrl = DEFAULT_AZURE_CONTAINER_URL;
+				els.baseUrlInput.value = state.baseUrl;
+			} else if (isLocalhost && (state.sourceMode === 'local' || state.sourceMode === 'auto')) {
+				state.baseUrl = getLocalBaseUrl();
+				els.baseUrlInput.value = state.baseUrl;
+			}
+
 			discoverAssets();
 		});
 
@@ -255,11 +282,18 @@
 				}
 
 				// STEP 2: If not on localhost (or local crawl returned nothing), query Azure Blob Live XML.
+				// Note: Always use the Azure container URL (not a localhost URL) when querying Azure XML!
 				if (items.length === 0) {
-					const azureItems = await fetchFromAzureBlobXml(state.baseUrl);
+					const azureContainerUrl = isLocalhost ? DEFAULT_AZURE_CONTAINER_URL : state.baseUrl;
+					const azureItems = await fetchFromAzureBlobXml(azureContainerUrl);
 					if (azureItems.length > 0) {
 						items = azureItems;
 						sourceUsed = 'Azure Blob Live';
+						// If we fell back to Azure Live while on localhost, update baseUrl to Azure so links work
+						if (isLocalhost) {
+							state.baseUrl = azureContainerUrl;
+							els.baseUrlInput.value = state.baseUrl;
+						}
 					}
 				}
 
