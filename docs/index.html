@@ -226,8 +226,8 @@
 						</li>
 					</ol>
 
-					<h4 style="margin-top: 1.25rem;">Scenario B: Optional Code Customizations in <code>/js/site.js</code></h4>
-					<p>You only need to touch <code>/js/site.js</code> if you want custom display formatting or offline fallback support:</p>
+					<h4 style="margin-top: 1.25rem;">Scenario B: Optional Code Customization in <code>/js/site.js</code></h4>
+					<p>You only need to touch <code>/js/site.js</code> if you want custom display formatting for a library's card title:</p>
 					<ul class="docs-list">
 						<li>
 							<strong>Custom Card Title Capitalization (<code>formatLibraryDisplayName</code>):</strong><br>
@@ -238,23 +238,20 @@
   'jhm-analytics': 'JHM Analytics' // &lt;-- Custom display title
 };</code></pre>
 						</li>
-						<li>
-							<strong>Offline <code>file://</code> Fallback Preview (<code>FALLBACK_PATHS</code>):</strong><br>
-							If someone opens <code>index.html</code> directly from Windows File Explorer (<code>file://</code> protocol without a local web server or internet access), <code>/js/site.js</code> falls back to the <code>FALLBACK_PATHS</code> array at the top of <code>/js/site.js</code>. You can optionally add your new file path there if you want it included in offline previews.
-						</li>
 					</ul>
 				</div>
 
 				<div class="docs-card" id="dev-local-workflow">
-					<h3>3. Local Development Workflow</h3>
-					<p>When working locally on your machine, the portal supports automatic local folder discovery:</p>
+					<h3>3. Local Development Workflow (VS Code Live Server Required)</h3>
+					<p>When working locally on your machine, you must run a local HTTP server (such as the VS Code <strong>Live Server</strong> extension) to test local <code>/cdn/</code> folders:</p>
 					<ul class="docs-list">
-						<li><strong>Recommended (VS Code Live Server / Local HTTP Server):</strong> Run a local development server (such as the VS Code <em>Live Server</em> extension, <code>npx serve</code>, or <code>python -m http.server</code>). When running on <code>localhost</code> or <code>127.0.0.1</code>, <code>/js/site.js</code> automatically crawls your local <code>/css/cdn/</code> and <code>/js/cdn/</code> directory listings. Drop a file in locally, hit refresh, and it appears immediately!</li>
+						<li><strong>Why VS Code Live Server is Required:</strong> Modern web browsers block JavaScript <code>fetch()</code> from scanning local hard drive folders when a file is opened directly via double-click (<code>file:///C:/...</code>). Opening the project with VS Code <em>Live Server</em> (<code>http://127.0.0.1:5500</code> or <code>http://localhost:5500</code>) serves HTML directory listings that <code>/js/site.js</code> automatically crawls.</li>
+						<li><strong>Automatic Local URLs:</strong> When running on <code>localhost</code> or <code>127.0.0.1</code>, the portal automatically sets the Base URL to your local server address so clicking <strong>Copy URL</strong> or <strong>Open Raw File</strong> tests your local files directly before you upload them to Azure.</li>
 						<li><strong>Source Switcher in the UI:</strong> Use the <strong>Source</strong> dropdown in the top toolbar to switch between:
 							<ul>
 								<li><code>Auto (Smart Detect)</code> &mdash; Uses local folders on <code>localhost</code>, or Azure Live XML in production.</li>
 								<li><code>Azure Blob Live XML</code> &mdash; Forces the UI (even on <code>localhost</code>) to query the live Azure container at <code>jhmcdn.blob.core.windows.net</code>.</li>
-								<li><code>Local /cdn/ Folders</code> &mdash; Forces the UI to crawl local directories.</li>
+								<li><code>Local /cdn/ Folders</code> &mdash; Forces the UI to crawl local directories (requires VS Code Live Server).</li>
 							</ul>
 						</li>
 					</ul>
@@ -281,12 +278,11 @@
 				</div>
 
 				<div class="docs-card" id="dev-discovery-engine">
-					<h3>5. How the 3-Tier Discovery Engine Works (<code>/js/site.js</code>)</h3>
-					<p>Under the hood, <code>/js/site.js</code> uses a resilient 3-tier discovery pipeline:</p>
+					<h3>5. How the 2-Tier Discovery Engine Works (<code>/js/site.js</code>)</h3>
+					<p>Under the hood, <code>/js/site.js</code> uses a clean 2-tier discovery pipeline:</p>
 					<ol class="docs-list ordered">
 						<li><strong>Tier 1 &mdash; Azure Blob Live XML:</strong> Fetches <code>?restype=container&amp;comp=list</code> (with automatic <code>&lt;NextMarker&gt;</code> pagination support for large containers), parses each <code>&lt;Blob&gt;</code> node, extracts file size and last-modified date, and filters for <code>^(css|js)/cdn/</code> paths.</li>
-						<li><strong>Tier 2 &mdash; Local Dev Server Crawler:</strong> Recursively crawls directory links inside <code>/css/cdn/</code> and <code>/js/cdn/</code> when running on a local dev server.</li>
-						<li><strong>Tier 3 &mdash; Offline Fallback Preview:</strong> Provides a built-in fallback preview if opened directly via <code>file://</code> without network connectivity.</li>
+						<li><strong>Tier 2 &mdash; Local Dev Server Crawler:</strong> Recursively crawls directory links inside <code>/css/cdn/</code> and <code>/js/cdn/</code> when running on a local dev server (such as VS Code Live Server on <code>localhost</code> / <code>127.0.0.1</code>).</li>
 					</ol>
 				</div>
 			</section>

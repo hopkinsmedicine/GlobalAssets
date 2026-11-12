@@ -9,7 +9,7 @@
  * in the repository, groups them by library and version, and renders an
  * interactive UI where users can search, filter, and copy CDN links.
  *
- * HOW DYNAMIC ASSET DISCOVERY WORKS (3-Tier Architecture):
+ * HOW DYNAMIC ASSET DISCOVERY WORKS (2-Tier Architecture):
  * 1. Tier 1 - Azure Blob Storage Live XML Listing:
  *    Queries Azure's built-in container listing API (?restype=container&comp=list).
  *    Automatically finds any files matching:
@@ -17,15 +17,10 @@
  *      - js/cdn/{library}/{version}/{file}
  *
  * 2. Tier 2 - Local Dev Server Folder Auto-Crawler:
- *    When running locally on a developer's machine (e.g., VS Code Live Server
- *    on localhost / 127.0.0.1), it crawls the HTML directory listings of
+ *    When running locally on a developer's machine via VS Code Live Server
+ *    (localhost / 127.0.0.1), it crawls the HTML directory listings of
  *    /css/cdn/ and /js/cdn/ so newly added folders/files appear immediately
  *    on browser refresh without needing to upload to Azure first.
- *
- * 3. Tier 3 - Built-in Fallback Manifest:
- *    If a developer double-clicks index.html directly from File Explorer
- *    (file:// protocol where browsers block fetch requests), it uses a
- *    fallback list so the UI still renders a preview.
  */
 
 // We wrap the entire script in an IIFE (Immediately Invoked Function Expression)
@@ -52,18 +47,6 @@
 	 * - `(.+)$`      : Capture Group 4 -> File name (or nested subpath, e.g., 'jquery.min.js')
 	 */
 	const CDN_PATH_REGEX = /^\/?(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$/i;
-
-	/**
-	 * Fallback asset list used ONLY when both Local Server crawling and Azure XML
-	 * discovery return 0 files (for example, opening index.html offline via file://).
-	 */
-	const FALLBACK_PATHS = [
-		{ path: 'css/cdn/font-awesome/4.1/font-awesome.min.css', size: 125, lastModified: null },
-		{ path: 'css/cdn/font-awesome/5.3/all.min.css', size: 224, lastModified: null },
-		{ path: 'js/cdn/jquery/4.1/jquery.min.js', size: 112, lastModified: null },
-		{ path: 'js/cdn/jquery/4.7/jquery.min.js', size: 113, lastModified: null },
-		{ path: 'js/cdn/jquery/5.3/jquery.min.js', size: 112, lastModified: null }
-	];
 
 	/**
 	 * Central Application State.
@@ -243,8 +226,9 @@
 	   ========================================================================== */
 
 	/**
-	 * Orchestrates asset discovery across our 3 tiers based on the current environment
-	 * and the user's selected `state.sourceMode`.
+	 * Orchestrates asset discovery across our 2 tiers (Azure Blob Live XML and
+	 * Local Dev Server Crawler) based on the current environment and the user's
+	 * selected `state.sourceMode`.
 	 *
 	 * @param {boolean} [isManualRefresh=false] - True if triggered by clicking the "Sync" button
 	 *                                            (shows a toast notification when finished).
@@ -254,9 +238,7 @@
 		updateStatus('connecting', 'Scanning repository...');
 
 		// Check if the developer is running on a local web server (e.g., VS Code Live Server)
-		// or opening the HTML file directly from their hard drive (`file://`).
 		const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-		const isFileProtocol = window.location.protocol === 'file:';
 
 		let items = [];
 		let sourceUsed = '';
@@ -272,7 +254,7 @@
 				sourceUsed = 'Local /cdn/ Folders';
 			} else {
 				// Default 'auto' mode (Smart Detect):
-				// STEP 1: If running on localhost, crawl local `/css/cdn/` and `/js/cdn/` first.
+				// TIER 2 (Local Dev): If running on localhost, crawl local `/css/cdn/` and `/js/cdn/` first.
 				// This lets developers add a folder locally and see it immediately on refresh!
 				if (isLocalhost) {
 					items = await crawlLocalCdnDirectories();
@@ -281,7 +263,8 @@
 					}
 				}
 
-				// STEP 2: If not on localhost (or local crawl returned nothing), query Azure Blob Live XML.
+				// TIER 1 (Azure Production): If not on localhost (or local crawl returned nothing),
+				// query Azure Blob Live XML.
 				// Note: Always use the Azure container URL (not a localhost URL) when querying Azure XML!
 				if (items.length === 0) {
 					const azureContainerUrl = isLocalhost ? DEFAULT_AZURE_CONTAINER_URL : state.baseUrl;
@@ -294,23 +277,14 @@
 							state.baseUrl = azureContainerUrl;
 							els.baseUrlInput.value = state.baseUrl;
 						}
+					} else {
+						sourceUsed = 'Azure Blob Live (0 CDN files found)';
 					}
-				}
-
-				// STEP 3: Handle empty container or offline `file://` preview.
-				if (items.length === 0 && !isLocalhost && !isFileProtocol) {
-					sourceUsed = 'Azure Blob Live (0 CDN files uploaded yet)';
-				} else if (items.length === 0) {
-					items = FALLBACK_PATHS;
-					sourceUsed = 'Local Fallback Preview';
 				}
 			}
 		} catch (err) {
 			console.warn('Discovery warning:', err);
-			if (items.length === 0) {
-				items = FALLBACK_PATHS;
-				sourceUsed = 'Fallback Preview';
-			}
+			sourceUsed = 'Connection Error';
 		}
 
 		// Transform the flat array of file paths into structured library -> version -> files objects
@@ -690,7 +664,8 @@
 			'chartjs': 'Chart.js',
 			'lodash': 'Lodash',
 			'moment': 'Moment.js',
-			'axios': 'Axios'
+			'axios': 'Axios',
+			"d3": 'D3.js',
 		};
 		const lower = slug.toLowerCase();
 		if (knownNames[lower]) return knownNames[lower];
@@ -777,8 +752,13 @@
 			els.emptyState.hidden = false;
 
 			if (state.libraries.length === 0) {
-				els.emptyStateTitle.textContent = 'No CDN assets found in Azure container yet';
-				els.emptyStateDesc.innerHTML = 'Upload your folders to <code>/css/cdn/{library}/{version}/</code> and <code>/js/cdn/{library}/{version}/</code> in your <strong>global-assets</strong> Azure Blob container, then click <strong>Sync</strong>.';
+				if (window.location.protocol === 'file:' && state.sourceMode === 'local') {
+					els.emptyStateTitle.textContent = 'Local folder scanning requires VS Code Live Server';
+					els.emptyStateDesc.innerHTML = 'Browsers block local folder discovery over the <code>file://</code> protocol. Please open this project using the VS Code <strong>Live Server</strong> extension (<code>http://127.0.0.1:5500</code>) to scan local <code>/cdn/</code> folders.';
+				} else {
+					els.emptyStateTitle.textContent = 'No CDN assets found in repository yet';
+					els.emptyStateDesc.innerHTML = 'Upload your folders to <code>/css/cdn/{library}/{version}/</code> and <code>/js/cdn/{library}/{version}/</code> in your <strong>global-assets</strong> Azure Blob container (or run via VS Code <strong>Live Server</strong> locally), then click <strong>Sync</strong>.';
+				}
 				els.resetFiltersBtn.hidden = true;
 			} else {
 				els.emptyStateTitle.textContent = 'No matching assets found';
