@@ -5,9 +5,10 @@
  *
  * PURPOSE:
  * This file powers the user interface for the Johns Hopkins Medicine Global
- * Assets repository. It dynamically discovers CSS and JavaScript files hosted
- * in the repository, groups them by library and version, and renders an
- * interactive UI where users can search, filter, and copy CDN links.
+ * Assets repository. It dynamically discovers CSS, JavaScript, and Image files
+ * hosted in the repository, groups them by library and version, and renders an
+ * interactive UI where users can search, filter, and copy CDN links or generate
+ * accessible HTML image tags.
  *
  * HOW DYNAMIC ASSET DISCOVERY WORKS (2-Tier Architecture):
  * 1. Tier 1 - Azure Blob Storage Live XML Listing:
@@ -15,12 +16,13 @@
  *    Automatically finds any files matching:
  *      - css/cdn/{library}/{version}/{file}
  *      - js/cdn/{library}/{version}/{file}
+ *      - img/cdn/{category}/{file} (or img/cdn/{category}/{version}/{file})
  *
  * 2. Tier 2 - Local Dev Server Folder Auto-Crawler:
  *    When running locally on a developer's machine via VS Code Live Server
  *    (localhost / 127.0.0.1), it crawls the HTML directory listings of
- *    /css/cdn/ and /js/cdn/ so newly added folders/files appear immediately
- *    on browser refresh without needing to upload to Azure first.
+ *    /css/cdn/, /js/cdn/, and /img/cdn/ so newly added folders/files appear
+ *    immediately on browser refresh without needing to upload to Azure first.
  */
 
 // We wrap the entire script in an IIFE (Immediately Invoked Function Expression)
@@ -36,7 +38,7 @@
 	const DEFAULT_AZURE_CONTAINER_URL = 'https://jhmcdn.blob.core.windows.net/global-assets';
 
 	/**
-	 * Regular Expression used to validate and extract metadata from a file's path.
+	 * Regular Expression used to validate and extract metadata from a CSS or JS file path.
 	 *
 	 * Breakdown of `^\/?(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$`:
 	 * - `^\/?`       : Optional leading slash at the start of the path
@@ -46,7 +48,78 @@
 	 * - `\/([^/]+)\/`: Capture Group 3 -> Version folder name (e.g., '4.1', '4.7', '5.3')
 	 * - `(.+)$`      : Capture Group 4 -> File name (or nested subpath, e.g., 'jquery.min.js')
 	 */
-	const CDN_PATH_REGEX = /^\/?(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$/i;
+	const CDN_CODE_PATH_REGEX = /^\/?(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$/i;
+
+	/**
+	 * Regular Expressions used to validate and extract metadata from an Image path inside `/img/cdn/`.
+	 *
+	 * Supports BOTH patterns:
+	 * 1. Direct category folder (no version folder needed, version can be in filename):
+	 *    e.g., `img/cdn/logos/jhm-logo.png` -> category: 'logos', file: 'jhm-logo.png'
+	 * 2. Versioned subfolder:
+	 *    e.g., `img/cdn/logos/1.0/jhm-logo.png` -> category: 'logos', version: '1.0', file: 'jhm-logo.png'
+	 */
+	const CDN_IMG_VERSIONED_REGEX = /^\/?img\/cdn\/([^/]+)\/([^/]+)\/(.+)$/i;
+	const CDN_IMG_DIRECT_REGEX = /^\/?img\/cdn\/([^/]+)\/([^/]+)$/i;
+	const CDN_IMG_ROOT_REGEX = /^\/?img\/cdn\/([^/]+)$/i;
+
+	/**
+	 * Helper function that parses any relative blob/file path and returns its
+	 * structured asset parts (`{ type, libraryName, version, fileName }`),
+	 * or `null` if the path is not inside `/css/cdn/`, `/js/cdn/`, or `/img/cdn/`.
+	 *
+	 * @param {string} rawPath - Relative path to inspect.
+	 * @returns {{type: 'css'|'js'|'img', libraryName: string, version: string, fileName: string}|null}
+	 */
+	function parseCdnAssetPath(rawPath) {
+		const normalized = rawPath.replace(/^\/+/, '');
+
+		// 1. Check if it's a CSS or JS library file: {css|js}/cdn/{library}/{version}/{file}
+		const codeMatch = normalized.match(CDN_CODE_PATH_REGEX);
+		if (codeMatch) {
+			return {
+				type: codeMatch[1].toLowerCase(),
+				libraryName: codeMatch[2],
+				version: codeMatch[3],
+				fileName: codeMatch[4]
+			};
+		}
+
+		// 2. Check if it's an Image inside a version subfolder: img/cdn/{category}/{version}/{file}
+		const imgVerMatch = normalized.match(CDN_IMG_VERSIONED_REGEX);
+		if (imgVerMatch) {
+			return {
+				type: 'img',
+				libraryName: imgVerMatch[1],
+				version: imgVerMatch[2],
+				fileName: imgVerMatch[3]
+			};
+		}
+
+		// 3. Check if it's an Image inside a category folder (no version subfolder): img/cdn/{category}/{file}
+		const imgDirectMatch = normalized.match(CDN_IMG_DIRECT_REGEX);
+		if (imgDirectMatch) {
+			return {
+				type: 'img',
+				libraryName: imgDirectMatch[1],
+				version: 'latest',
+				fileName: imgDirectMatch[2]
+			};
+		}
+
+		// 4. Check if it's an Image placed directly inside img/cdn/{file}
+		const imgRootMatch = normalized.match(CDN_IMG_ROOT_REGEX);
+		if (imgRootMatch) {
+			return {
+				type: 'img',
+				libraryName: 'general-images',
+				version: 'latest',
+				fileName: imgRootMatch[1]
+			};
+		}
+
+		return null;
+	}
 
 	/**
 	 * Central Application State.
@@ -55,11 +128,22 @@
 	 */
 	const state = {
 		libraries: [],          // Array of grouped library objects (created by groupAssetsIntoLibraries)
-		activeFilter: 'all',    // Currently selected category tab: 'all' | 'js' | 'css'
+		activeFilter: 'all',    // Currently selected category tab: 'all' | 'js' | 'css' | 'img'
 		searchQuery: '',        // Current lowercase text in the search box
 		baseUrl: DEFAULT_AZURE_CONTAINER_URL, // Root CDN URL prepended to relative file paths
 		sourceMode: 'auto',     // Discovery mode selected in dropdown: 'auto' | 'azure' | 'local'
-		activeSourceLabel: ''   // Human-readable name of the source currently in use
+		activeSourceLabel: '',  // Human-readable name of the source currently in use
+
+		// Image Tag Generator Modal State
+		modal: {
+			isOpen: false,
+			mode: 'img',        // 'img' (<img> only) | 'figure' (<figure> + <img> + <figcaption>)
+			imageUrl: '',
+			fileName: '',
+			altText: '',
+			figcaptionText: '',
+			lastFocusedElement: null // Remembers which button opened the modal to restore focus on close
+		}
 	};
 
 	/**
@@ -73,6 +157,7 @@
 		countAll: document.getElementById('countAll'),
 		countJs: document.getElementById('countJs'),
 		countCss: document.getElementById('countCss'),
+		countImg: document.getElementById('countImg'),
 		sourceModeSelect: document.getElementById('sourceModeSelect'),
 		baseUrlInput: document.getElementById('baseUrlInput'),
 		sourceStatusDot: document.getElementById('sourceStatusDot'),
@@ -85,7 +170,22 @@
 		emptyStateDesc: document.getElementById('emptyStateDesc'),
 		resetFiltersBtn: document.getElementById('resetFiltersBtn'),
 		librariesGrid: document.getElementById('librariesGrid'),
-		toastContainer: document.getElementById('toastContainer')
+		toastContainer: document.getElementById('toastContainer'),
+
+		// Image Tag Generator Modal DOM Elements
+		imgTagModalBackdrop: document.getElementById('imgTagModalBackdrop'),
+		imgModalCloseBtn: document.getElementById('imgModalCloseBtn'),
+		imgModalCancelBtn: document.getElementById('imgModalCancelBtn'),
+		imgModalCopyBtn: document.getElementById('imgModalCopyBtn'),
+		imgModalThumb: document.getElementById('imgModalThumb'),
+		imgModalFileName: document.getElementById('imgModalFileName'),
+		imgModalFileUrl: document.getElementById('imgModalFileUrl'),
+		modeImgOnlyBtn: document.getElementById('modeImgOnlyBtn'),
+		modeFigureBtn: document.getElementById('modeFigureBtn'),
+		imgAltInput: document.getElementById('imgAltInput'),
+		figcaptionFieldGroup: document.getElementById('figcaptionFieldGroup'),
+		imgFigcaptionInput: document.getElementById('imgFigcaptionInput'),
+		imgModalCodePreview: document.getElementById('imgModalCodePreview')
 	};
 
 	/* ==========================================================================
@@ -143,7 +243,7 @@
 
 	/**
 	 * Registers all top-level UI event listeners (search bar, keyboard shortcuts,
-	 * category filter tabs, source dropdown, base URL input, and sync button).
+	 * category filter tabs, source dropdown, base URL input, sync button, and modal controls).
 	 */
 	function bindEvents() {
 		// 1. Live Search Input: re-renders the grid on every keystroke
@@ -152,16 +252,23 @@
 			render();
 		});
 
-		// 2. Keyboard Shortcut: pressing '/' anywhere (when not already typing in an input)
-		//    immediately focuses the search box for quick lookup.
+		// 2. Global Keyboard Shortcuts:
+		//    - Pressing 'Escape' closes the Image Tag Generator modal if it is open.
+		//    - Pressing '/' anywhere (when not typing in an input) focuses the search box.
 		document.addEventListener('keydown', (e) => {
-			if (e.key === '/' && document.activeElement !== els.searchInput && document.activeElement !== els.baseUrlInput) {
+			if (e.key === 'Escape' && state.modal.isOpen) {
+				e.preventDefault();
+				closeImageTagModal();
+				return;
+			}
+			const activeTag = document.activeElement ? document.activeElement.tagName : '';
+			if (e.key === '/' && !state.modal.isOpen && activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
 				e.preventDefault(); // Prevents '/' from being typed into the search input itself
 				els.searchInput.focus();
 			}
 		});
 
-		// 3. Category Filter Buttons ('All Assets', 'JavaScript', 'Stylesheets')
+		// 3. Category Filter Buttons ('All Assets', 'JavaScript', 'Stylesheets', 'Images')
 		els.filterTabs.forEach((tab) => {
 			tab.addEventListener('click', () => {
 				// First, remove the active highlight and aria-pressed state from all buttons
@@ -219,6 +326,60 @@
 			render();
 			els.searchInput.focus();
 		});
+
+		// 8. Image Tag Generator Modal Events
+		bindModalEvents();
+	}
+
+	/**
+	 * Attaches event listeners for the "Generate Tag" Image Modal:
+	 * - Switching between `<img>` only and `<figure>` + `<figcaption>` mode
+	 * - Live real-time updating of the HTML tag preview as the user types in the `alt` and `figcaption` inputs
+	 * - Copying the generated HTML snippet to the clipboard
+	 * - Closing the modal via the Close (X) button, Cancel button, or clicking the backdrop overlay
+	 */
+	function bindModalEvents() {
+		if (!els.imgTagModalBackdrop) return;
+
+		// Toggle Button 1: <img> tag only
+		els.modeImgOnlyBtn.addEventListener('click', () => {
+			setModalTagMode('img');
+		});
+
+		// Toggle Button 2: <img> with <figure> & <figcaption>
+		els.modeFigureBtn.addEventListener('click', () => {
+			setModalTagMode('figure');
+		});
+
+		// Live real-time update when typing in the Alt Text field
+		els.imgAltInput.addEventListener('input', (e) => {
+			state.modal.altText = e.target.value;
+			updateModalLivePreview();
+		});
+
+		// Live real-time update when typing in the Figcaption field
+		els.imgFigcaptionInput.addEventListener('input', (e) => {
+			state.modal.figcaptionText = e.target.value;
+			updateModalLivePreview();
+		});
+
+		// Copy Generated Tag button inside the modal footer
+		els.imgModalCopyBtn.addEventListener('click', async () => {
+			const generatedHtml = buildModalImageHtmlSnippet();
+			const label = state.modal.mode === 'figure' ? '<figure> HTML tag' : '<img> HTML tag';
+			await copyToClipboard(generatedHtml, els.imgModalCopyBtn, label);
+		});
+
+		// Close buttons (X icon and Cancel button)
+		els.imgModalCloseBtn.addEventListener('click', closeImageTagModal);
+		els.imgModalCancelBtn.addEventListener('click', closeImageTagModal);
+
+		// Clicking outside the modal dialog box (on the dark backdrop) closes the modal
+		els.imgTagModalBackdrop.addEventListener('click', (e) => {
+			if (e.target === els.imgTagModalBackdrop) {
+				closeImageTagModal();
+			}
+		});
 	}
 
 	/* ==========================================================================
@@ -254,7 +415,7 @@
 				sourceUsed = 'Local /cdn/ Folders';
 			} else {
 				// Default 'auto' mode (Smart Detect):
-				// TIER 2 (Local Dev): If running on localhost, crawl local `/css/cdn/` and `/js/cdn/` first.
+				// TIER 2 (Local Dev): If running on localhost, crawl local `/css/cdn/`, `/js/cdn/`, and `/img/cdn/` first.
 				// This lets developers add a folder locally and see it immediately on refresh!
 				if (isLocalhost) {
 					items = await crawlLocalCdnDirectories();
@@ -308,19 +469,7 @@
 	 * How Azure Container Listing works:
 	 * When a container's public access level is set to "Container", calling
 	 * `https://<account>.blob.core.windows.net/<container>?restype=container&comp=list`
-	 * returns an XML document listing up to 5,000 blobs at a time:
-	 *   <EnumerationResults>
-	 *     <Blobs>
-	 *       <Blob>
-	 *         <Name>js/cdn/jquery/5.3/jquery.min.js</Name>
-	 *         <Properties>
-	 *           <Content-Length>87532</Content-Length>
-	 *           <Last-Modified>Tue, 03 Nov 2026 14:34:04 GMT</Last-Modified>
-	 *         </Properties>
-	 *       </Blob>
-	 *     </Blobs>
-	 *     <NextMarker>...</NextMarker>
-	 *   </EnumerationResults>
+	 * returns an XML document listing up to 5,000 blobs at a time.
 	 *
 	 * @param {string} containerBaseUrl - The root URL of the Azure Blob container.
 	 * @returns {Promise<Array<{path: string, size: number|null, lastModified: string|null}>>}
@@ -358,9 +507,9 @@
 
 				const blobPath = nameNode.textContent.trim();
 
-				// Only keep files that match our `/css/cdn/...` or `/js/cdn/...` convention.
-				// This automatically ignores `index.html`, `css/site.css`, `js/site.js`, `img/*`, etc.
-				if (CDN_PATH_REGEX.test(blobPath)) {
+				// Only keep files that match `/css/cdn/...`, `/js/cdn/...`, or `/img/cdn/...`.
+				// This automatically ignores `index.html`, `css/site.css`, `js/site.js`, `img/logo.png`, etc.
+				if (parseCdnAssetPath(blobPath)) {
 					const lengthNode = blobNode.querySelector('Properties > Content-Length');
 					const modNode = blobNode.querySelector('Properties > Last-Modified');
 					discovered.push({
@@ -380,13 +529,13 @@
 	}
 
 	/**
-	 * TIER 2 DISCOVERY: Crawls local `/css/cdn/` and `/js/cdn/` folders when running
-	 * on a local development server (such as VS Code Live Server, Python http.server, etc.).
+	 * TIER 2 DISCOVERY: Crawls local `/css/cdn/`, `/js/cdn/`, and `/img/cdn/` folders when
+	 * running on a local development server (such as VS Code Live Server).
 	 *
 	 * @returns {Promise<Array<{path: string, size: number|null, lastModified: string|null}>>}
 	 */
 	async function crawlLocalCdnDirectories() {
-		const roots = ['css/cdn/', 'js/cdn/'];
+		const roots = ['css/cdn/', 'js/cdn/', 'img/cdn/'];
 		const discovered = [];
 
 		for (const root of roots) {
@@ -398,39 +547,12 @@
 			}
 		}
 
-		// Optional secondary local fallback: if the local server has directory listing
-		// turned off, check if a static `js/assets-manifest.json` file exists.
-		if (discovered.length === 0) {
-			try {
-				const res = await fetch(`js/assets-manifest.json?_t=${Date.now()}`);
-				if (res.ok) {
-					const manifest = await res.json();
-					if (Array.isArray(manifest)) {
-						return manifest.map((item) => (typeof item === 'string' ? { path: item } : item));
-					}
-				}
-			} catch (_) {
-				// Ignore if manifest file is not present
-			}
-		}
-
 		return discovered;
 	}
 
 	/**
 	 * Recursively walks a local directory listing HTML page returned by a dev server
 	 * (like VS Code Live Server) to find all nested asset files.
-	 *
-	 * How this works step-by-step for a junior developer:
-	 * 1. When you request a folder URL like `http://127.0.0.1:5500/js/cdn/` from Live Server,
-	 *    Live Server responds with an HTML web page containing `<a href="...">` links for
-	 *    every subfolder (`jquery`) and file inside that directory.
-	 * 2. We fetch that HTML, parse it into a virtual DOM document using `DOMParser`, and
-	 *    extract all `<a href="...">` tags.
-	 * 3. For each link:
-	 *    - If it's a subfolder (like `jquery` or version folder `4.7`), this function calls
-	 *      itself recursively (`crawlDirectoryRecursive`) to look inside that subfolder.
-	 *    - If it's an actual asset file (like `jquery.min.js`), we add it to our results list!
 	 *
 	 * @param {string} dirPath - Relative directory path to scan (e.g., 'js/cdn/jquery/').
 	 * @param {number} depth   - Current recursion depth (capped at 4 to prevent infinite loops).
@@ -469,8 +591,8 @@
 
 			// If the developer opened a parent folder in VS Code (so the URL is e.g.
 			// `/GlobalAssets/js/cdn/jquery`), strip the leading `/GlobalAssets/` prefix
-			// so `relPath` always starts cleanly with `css/cdn/` or `js/cdn/`.
-			const matchIdx = relPath.search(/(css|js)\/cdn\//i);
+			// so `relPath` always starts cleanly with `css/cdn/`, `js/cdn/`, or `img/cdn/`.
+			const matchIdx = relPath.search(/(css|js|img)\/cdn\//i);
 			if (matchIdx > 0) {
 				relPath = relPath.slice(matchIdx);
 			}
@@ -482,22 +604,18 @@
 			}
 
 			// Determine whether this link is a SUBFOLDER or a FILE:
-			// Tricky edge case: Version folders are named things like "4.7" or "5.3.1".
-			// Notice that "4.7" contains a dot! And VS Code Live Server does NOT put a
-			// trailing slash on folder links (`href="/js/cdn/jquery/4.7"`).
-			// So if we checked "does it have a dot?", we would mistakenly think folder "4.7"
-			// is a file with a ".7" extension!
-			// Instead, we check if the last segment ends with a real web asset file extension.
+			// Version folders like "4.7" or "5.3.1" contain dots, so we only treat the
+			// last segment as a file if it ends with a known web asset extension.
 			const lastSegment = relPath.replace(/\/+$/, '').split('/').pop() || '';
-			const isKnownAssetFile = /\.(js|mjs|cjs|css|map|woff2?|ttf|eot|svg|otf|json|png|jpg|jpeg|gif|webp|ico)$/i.test(lastSegment);
+			const isKnownAssetFile = /\.(js|mjs|cjs|css|map|woff2?|ttf|eot|svg|otf|json|png|jpg|jpeg|gif|webp|ico|avif)$/i.test(lastSegment);
 
 			if (rawHref.endsWith('/') || !isKnownAssetFile) {
-				// It's a folder (e.g., 'jquery' or '4.7') -> recurse inside it!
+				// It's a folder (e.g., 'jquery', 'logos', or '4.7') -> recurse inside it!
 				const subDir = relPath.endsWith('/') ? relPath : `${relPath}/`;
 				const subFiles = await crawlDirectoryRecursive(subDir, depth + 1);
 				results.push(...subFiles);
-			} else if (CDN_PATH_REGEX.test(relPath)) {
-				// It's a valid asset file inside `/css/cdn/...` or `/js/cdn/...` -> record it!
+			} else if (parseCdnAssetPath(relPath)) {
+				// It's a valid asset file inside `/css/cdn/...`, `/js/cdn/...`, or `/img/cdn/...` -> record it!
 				results.push({
 					path: relPath,
 					size: null,
@@ -516,47 +634,19 @@
 	 * Converts a flat array of discovered file objects into a structured, hierarchical
 	 * list of libraries and versions ready for the UI to render.
 	 *
-	 * Input example (flat array):
-	 *   [
-	 *     { path: 'js/cdn/jquery/4.1/jquery.min.js' },
-	 *     { path: 'js/cdn/jquery/5.3/jquery.min.js' }
-	 *   ]
-	 *
-	 * Output example (grouped by Library -> Versions -> Files):
-	 *   [
-	 *     {
-	 *       id: 'js:jquery',
-	 *       type: 'js',
-	 *       name: 'jquery',
-	 *       displayName: 'jQuery',
-	 *       selectedVersion: 'all',
-	 *       versions: [
-	 *         { version: '5.3', files: [{ fileName: 'jquery.min.js', ... }] },
-	 *         { version: '4.1', files: [{ fileName: 'jquery.min.js', ... }] }
-	 *       ]
-	 *     }
-	 *   ]
-	 *
 	 * @param {Array<{path: string, size?: number|null, lastModified?: string|null}>} items
 	 * @returns {Array<Object>} Sorted array of library objects.
 	 */
 	function groupAssetsIntoLibraries(items) {
-		// We use a JavaScript `Map` keyed by `type:libraryName` (e.g., `js:jquery`)
-		// so if a library has both CSS and JS files, they get separate CSS and JS cards.
+		// We use a JavaScript `Map` keyed by `type:libraryName` (e.g., `js:jquery` or `img:logos`)
 		const libMap = new Map();
 
 		items.forEach((item) => {
 			const normalizedPath = item.path.replace(/^\/+/, '');
+			const parsed = parseCdnAssetPath(normalizedPath);
+			if (!parsed) return;
 
-			// Run the path through our regex to extract [fullMatch, type, libraryName, version, fileName]
-			const match = normalizedPath.match(CDN_PATH_REGEX);
-			if (!match) return;
-
-			const type = match[1].toLowerCase();      // 'css' | 'js'
-			const libraryName = match[2];             // e.g. 'font-awesome', 'jquery'
-			const version = match[3];                 // e.g. '4.1', '4.7', '5.3'
-			const fileName = match[4];                // e.g. 'all.min.css'
-
+			const { type, libraryName, version, fileName } = parsed;
 			const libKey = `${type}:${libraryName.toLowerCase()}`;
 
 			// If this is the first time we've seen this library, initialize its entry in `libMap`
@@ -608,7 +698,7 @@
 			};
 		});
 
-		// Finally, sort the library cards alphabetically by library name (e.g. Font Awesome, then jQuery)
+		// Finally, sort the library cards alphabetically by library name
 		return libraries.sort((a, b) => a.name.localeCompare(b.name));
 	}
 
@@ -616,27 +706,19 @@
 	 * Compares two version strings (like "4.1", "4.10", "5.3.1") in DESCENDING order
 	 * (newest version first).
 	 *
-	 * Why we can't just use standard string `.sort()`:
-	 * In alphabetical string sorting, `"4.10"` comes BEFORE `"4.2"` because character `'1'`
-	 * is smaller than `'2'`. By splitting the version string on `.` and `-` and converting
-	 * each part into a real `Number`, `10` is properly compared as greater than `2`!
-	 *
 	 * @param {string} vA - First version string.
 	 * @param {string} vB - Second version string.
 	 * @returns {number} Positive if vB > vA, negative if vA > vB, 0 if equal.
 	 */
 	function compareSemverDesc(vA, vB) {
-		// Split "5.3.1" into [5, 3, 1]
 		const partsA = String(vA).split(/[.-]/).map((n) => (isNaN(n) ? n : Number(n)));
 		const partsB = String(vB).split(/[.-]/).map((n) => (isNaN(n) ? n : Number(n)));
 		const len = Math.max(partsA.length, partsB.length);
 
 		for (let i = 0; i < len; i++) {
-			// Use `?? 0` so "5.3" is treated as "5.3.0" when compared against "5.3.1"
 			const a = partsA[i] ?? 0;
 			const b = partsB[i] ?? 0;
 			if (a !== b) {
-				// Return `b > a ? 1 : -1` for descending order (highest version first)
 				return b > a ? 1 : -1;
 			}
 		}
@@ -651,7 +733,6 @@
 	 * @returns {string} Human-friendly library title.
 	 */
 	function formatLibraryDisplayName(slug) {
-		// Dictionary of popular libraries with special capitalization
 		const knownNames = {
 			'jquery': 'jQuery',
 			'jquery-ui': 'jQuery UI',
@@ -664,14 +745,11 @@
 			'chartjs': 'Chart.js',
 			'lodash': 'Lodash',
 			'moment': 'Moment.js',
-			'axios': 'Axios',
-			"d3": 'D3.js',
+			'axios': 'Axios'
 		};
 		const lower = slug.toLowerCase();
 		if (knownNames[lower]) return knownNames[lower];
 
-		// For any other folder name, split by hyphens/underscores and capitalize each word:
-		// e.g., "my-custom-script" -> ["my", "custom", "script"] -> "My Custom Script"
 		return slug
 			.split(/[-_]+/)
 			.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -696,7 +774,7 @@
 
 		// Loop through every library and keep only the ones that match the active filter & search query
 		state.libraries.forEach((lib) => {
-			// 1. Check Category Tab filter ('all', 'js', or 'css')
+			// 1. Check Category Tab filter ('all', 'js', 'css', or 'img')
 			if (state.activeFilter !== 'all' && lib.type !== state.activeFilter) {
 				return;
 			}
@@ -757,7 +835,7 @@
 					els.emptyStateDesc.innerHTML = 'Browsers block local folder discovery over the <code>file://</code> protocol. Please open this project using the VS Code <strong>Live Server</strong> extension (<code>http://127.0.0.1:5500</code>) to scan local <code>/cdn/</code> folders.';
 				} else {
 					els.emptyStateTitle.textContent = 'No CDN assets found in repository yet';
-					els.emptyStateDesc.innerHTML = 'Upload your folders to <code>/css/cdn/{library}/{version}/</code> and <code>/js/cdn/{library}/{version}/</code> in your <strong>global-assets</strong> Azure Blob container (or run via VS Code <strong>Live Server</strong> locally), then click <strong>Sync</strong>.';
+					els.emptyStateDesc.innerHTML = 'Upload your folders to <code>/css/cdn/</code>, <code>/js/cdn/</code>, or <code>/img/cdn/</code> in your <strong>global-assets</strong> Azure Blob container (or run via VS Code <strong>Live Server</strong> locally), then click <strong>Sync</strong>.';
 				}
 				els.resetFiltersBtn.hidden = true;
 			} else {
@@ -781,29 +859,53 @@
 	 * @returns {string} HTML markup for the `<article class="library-card">`.
 	 */
 	function renderLibraryCard(lib) {
-		const isJs = lib.type === 'js';
-		const badgeLabel = isJs ? 'JavaScript' : 'Stylesheet';
-		const badgeClass = isJs ? 'type-js' : 'type-css';
-		const folderPrefix = `/${lib.type}/cdn/${lib.name}/`;
+		let badgeLabel = 'Stylesheet';
+		let badgeClass = 'type-css';
+		if (lib.type === 'js') {
+			badgeLabel = 'JavaScript';
+			badgeClass = 'type-js';
+		} else if (lib.type === 'img') {
+			badgeLabel = 'Image';
+			badgeClass = 'type-img';
+		}
 
-		// Build the `<option>` tags for the card's Version dropdown.
-		// Since `lib.versions` is already sorted newest-first, index `0` is marked `(Latest)`.
-		const versionOptions = [
-			`<option value="all" ${lib.selectedVersion === 'all' ? 'selected' : ''}>All Versions (${lib.versions.length})</option>`,
-			...lib.versions.map((v, idx) => {
-				const latestSuffix = idx === 0 ? ' (Latest)' : '';
-				const selected = lib.selectedVersion === v.version ? 'selected' : '';
-				return `<option value="${escapeHtml(v.version)}" ${selected}>v${escapeHtml(v.version)}${latestSuffix}</option>`;
-			})
-		].join('');
+		const folderPrefix = lib.name === 'general-images' ? `/img/cdn/` : `/${lib.type}/cdn/${lib.name}/`;
+		const safeDomId = lib.id.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+		// Hide the Version selector dropdown if this is a flat image folder (only 'latest' version)
+		const hasRealVersions = !(lib.type === 'img' && lib.versions.length === 1 && lib.versions[0].version === 'latest');
+
+		let versionControlsHtml = '';
+		if (hasRealVersions) {
+			const versionOptions = [
+				`<option value="all" ${lib.selectedVersion === 'all' ? 'selected' : ''}>All Versions (${lib.versions.length})</option>`,
+				...lib.versions.map((v, idx) => {
+					const latestSuffix = idx === 0 ? ' (Latest)' : '';
+					const selected = lib.selectedVersion === v.version ? 'selected' : '';
+					const labelPrefix = v.version === 'latest' ? '' : 'v';
+					return `<option value="${escapeHtml(v.version)}" ${selected}>${labelPrefix}${escapeHtml(v.version)}${latestSuffix}</option>`;
+				})
+			].join('');
+
+			versionControlsHtml = `
+				<div class="version-controls">
+					<label class="version-label" for="ver-${escapeHtml(safeDomId)}">Version:</label>
+					<select
+						id="ver-${escapeHtml(safeDomId)}"
+						class="version-select"
+						data-lib-id="${escapeHtml(lib.id)}"
+						aria-label="Filter ${escapeHtml(lib.displayName)} (${badgeLabel}) by version"
+					>
+						${versionOptions}
+					</select>
+				</div>
+			`;
+		}
 
 		// Render each file row inside the card
 		const rowsHtml = lib.matchingVersions
 			.map((verObj) => verObj.files.map((file) => renderFileRow(lib, file)).join(''))
 			.join('');
-
-		// Create a valid HTML ID slug (no colons) for pairing <label for="..."> with <select id="...">
-		const safeDomId = lib.id.replace(/[^a-zA-Z0-9_-]/g, '-');
 
 		return `
 			<article class="library-card" data-lib-id="${escapeHtml(lib.id)}" aria-labelledby="title-${escapeHtml(safeDomId)}">
@@ -813,17 +915,7 @@
 						<h3 class="library-name" id="title-${escapeHtml(safeDomId)}">${escapeHtml(lib.displayName)}</h3>
 						<code class="library-path-chip">${escapeHtml(folderPrefix)}</code>
 					</div>
-					<div class="version-controls">
-						<label class="version-label" for="ver-${escapeHtml(safeDomId)}">Version:</label>
-						<select
-							id="ver-${escapeHtml(safeDomId)}"
-							class="version-select"
-							data-lib-id="${escapeHtml(lib.id)}"
-							aria-label="Filter ${escapeHtml(lib.displayName)} (${badgeLabel}) by version"
-						>
-							${versionOptions}
-						</select>
-					</div>
+					${versionControlsHtml}
 				</div>
 				<div class="file-list" role="list" aria-label="${escapeHtml(lib.displayName)} files">
 					${rowsHtml}
@@ -833,17 +925,18 @@
 	}
 
 	/**
-	 * Generates the HTML string for an individual file row inside a Library Card,
-	 * including its version tag, filename, full CDN URL preview, and Copy buttons.
+	 * Generates the HTML string for an individual file row inside a Library Card.
+	 * - For JS and CSS files: renders "Copy URL" and "Copy <script>/<link>" buttons.
+	 * - For Image files ('img'): renders a live thumbnail preview, "Copy URL", and
+	 *   a "Generate Tag" button that opens the interactive Image Tag Generator Modal.
 	 *
-	 * @param {Object} lib  - The parent library object ('js' or 'css').
+	 * @param {Object} lib  - The parent library object ('js', 'css', or 'img').
 	 * @param {Object} file - The file metadata object (`fileName`, `version`, `relativePath`, etc.).
 	 * @returns {string} HTML markup for `<div class="file-row">`.
 	 */
 	function renderFileRow(lib, file) {
 		const fullUrl = buildFullAssetUrl(file.relativePath);
-		const htmlSnippet = buildHtmlTagSnippet(lib.type, fullUrl);
-		const tagButtonLabel = lib.type === 'js' ? 'Copy &lt;script&gt;' : 'Copy &lt;link&gt;';
+		const isImg = lib.type === 'img';
 
 		// Optional metadata (file size in KB/MB and last modified date when loaded from Azure XML)
 		const metaParts = [];
@@ -851,21 +944,87 @@
 		if (file.lastModified) metaParts.push(`Updated ${formatShortDate(file.lastModified)}`);
 		const metaHtml = metaParts.length > 0 ? `<span class="file-meta">&bull; ${escapeHtml(metaParts.join(' • '))}</span>` : '';
 
-		const tagKind = lib.type === 'js' ? 'script tag' : 'stylesheet link tag';
-		const contextDesc = `${lib.displayName} v${file.version} (${file.fileName})`;
+		const versionBadgeHtml = file.version === 'latest'
+			? ''
+			: `<span class="version-tag">v${escapeHtml(file.version)}</span>`;
 
-		// Note: We store the exact string to copy inside `data-copy-text="..."` attributes
-		// on the buttons so `bindCardEvents()` can read it when clicked.
-		return `
-			<div class="file-row" role="listitem">
+		const contextDesc = file.version === 'latest'
+			? `${lib.displayName} (${file.fileName})`
+			: `${lib.displayName} v${file.version} (${file.fileName})`;
+
+		// Left side of the row: include a thumbnail box if this is an image asset
+		const fileInfoSectionHtml = isImg
+			? `
+				<div class="file-info-with-thumb">
+					<div class="file-thumb-box" aria-hidden="true">
+						<img src="${escapeHtml(fullUrl)}" alt="" class="file-thumb-img" loading="lazy">
+					</div>
+					<div class="file-info">
+						<div class="file-primary">
+							${versionBadgeHtml}
+							<span class="file-name">${escapeHtml(file.fileName)}</span>
+							${metaHtml}
+						</div>
+						<code class="file-url-preview">${escapeHtml(fullUrl)}</code>
+					</div>
+				</div>
+			`
+			: `
 				<div class="file-info">
 					<div class="file-primary">
-						<span class="version-tag">v${escapeHtml(file.version)}</span>
+						${versionBadgeHtml}
 						<span class="file-name">${escapeHtml(file.fileName)}</span>
 						${metaHtml}
 					</div>
 					<code class="file-url-preview">${escapeHtml(fullUrl)}</code>
 				</div>
+			`;
+
+		// Second action button: "Generate Tag" modal trigger for images, or direct "Copy <script>/<link>" for JS/CSS
+		let secondaryActionButtonHtml = '';
+		if (isImg) {
+			secondaryActionButtonHtml = `
+				<button
+					type="button"
+					class="btn-generate-tag"
+					data-img-url="${escapeHtml(fullUrl)}"
+					data-img-filename="${escapeHtml(file.fileName)}"
+					aria-label="Generate HTML tag for ${escapeHtml(contextDesc)}"
+					title="Open modal to generate <img> or <figure> HTML tag"
+				>
+					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+						<circle cx="8.5" cy="8.5" r="1.5"></circle>
+						<polyline points="21 15 16 10 5 21"></polyline>
+					</svg>
+					<span>Generate Tag</span>
+				</button>
+			`;
+		} else {
+			const htmlSnippet = buildHtmlTagSnippet(lib.type, fullUrl);
+			const tagButtonLabel = lib.type === 'js' ? 'Copy &lt;script&gt;' : 'Copy &lt;link&gt;';
+			const tagKind = lib.type === 'js' ? 'script tag' : 'stylesheet link tag';
+			secondaryActionButtonHtml = `
+				<button
+					type="button"
+					class="btn-copy"
+					data-copy-text="${escapeHtml(htmlSnippet)}"
+					data-copy-label="HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
+					aria-label="Copy HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
+					title="Copy HTML snippet to clipboard"
+				>
+					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+						<polyline points="16 18 22 12 16 6"></polyline>
+						<polyline points="8 6 2 12 8 18"></polyline>
+					</svg>
+					<span>${tagButtonLabel}</span>
+				</button>
+			`;
+		}
+
+		return `
+			<div class="file-row" role="listitem">
+				${fileInfoSectionHtml}
 				<div class="file-actions">
 					<button
 						type="button"
@@ -881,20 +1040,7 @@
 						</svg>
 						<span>Copy URL</span>
 					</button>
-					<button
-						type="button"
-						class="btn-copy"
-						data-copy-text="${escapeHtml(htmlSnippet)}"
-						data-copy-label="HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
-						aria-label="Copy HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
-						title="Copy HTML snippet to clipboard"
-					>
-						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<polyline points="16 18 22 12 16 6"></polyline>
-							<polyline points="8 6 2 12 8 18"></polyline>
-						</svg>
-						<span>${tagButtonLabel}</span>
-					</button>
+					${secondaryActionButtonHtml}
 					<a
 						href="${escapeHtml(fullUrl)}"
 						target="_blank"
@@ -916,7 +1062,7 @@
 
 	/**
 	 * Attaches event listeners to dynamically rendered elements inside the Library Cards
-	 * (specifically the per-card Version `<select>` dropdowns and the Copy buttons).
+	 * (per-card Version `<select>` dropdowns, Copy buttons, and "Generate Tag" image buttons).
 	 * Must be called at the end of `render()` whenever `librariesGrid.innerHTML` is updated.
 	 */
 	function bindCardEvents() {
@@ -933,41 +1079,141 @@
 		});
 
 		// 2. Copy Action Buttons ("Copy URL" and "Copy <script>/<link>")
-		document.querySelectorAll('.btn-copy').forEach((btn) => {
+		document.querySelectorAll('.fields-copy, .file-actions .btn-copy').forEach((btn) => {
 			btn.addEventListener('click', async () => {
 				const textToCopy = btn.dataset.copyText;
 				const label = btn.dataset.copyLabel || 'Text';
 				await copyToClipboard(textToCopy, btn, label);
 			});
 		});
+
+		// 3. "Generate Tag" Buttons on Image Rows -> Opens the Image Tag Generator Modal
+		document.querySelectorAll('.btn-generate-tag').forEach((btn) => {
+			btn.addEventListener('click', () => {
+				const imageUrl = btn.dataset.imgUrl;
+				const fileName = btn.dataset.imgFilename;
+				openImageTagModal(imageUrl, fileName, btn);
+			});
+		});
 	}
 
 	/* ==========================================================================
-	   5. Helper & Utility Functions
+	   5. Image Tag Generator Modal Functions
+	   ========================================================================== */
+
+	/**
+	 * Opens the "Generate HTML Image Tag" modal for a clicked image row,
+	 * resets the input fields, updates the live code preview, and focuses the Alt input.
+	 *
+	 * @param {string} imageUrl          - Full CDN URL to the selected image.
+	 * @param {string} fileName          - File name of the selected image (e.g., 'jhm-logo.png').
+	 * @param {HTMLElement} triggerBtnEl - The "Generate Tag" button that was clicked (so focus returns to it on close).
+	 */
+	function openImageTagModal(imageUrl, fileName, triggerBtnEl) {
+		state.modal.isOpen = true;
+		state.modal.imageUrl = imageUrl;
+		state.modal.fileName = fileName;
+		state.modal.altText = '';
+		state.modal.figcaptionText = '';
+		state.modal.lastFocusedElement = triggerBtnEl || null;
+
+		// Populate modal preview header
+		els.imgModalThumb.src = imageUrl;
+		els.imgModalFileName.textContent = fileName;
+		els.imgModalFileUrl.textContent = imageUrl;
+
+		// Reset inputs and default to 'img' mode
+		els.imgAltInput.value = '';
+		els.imgFigcaptionInput.value = '';
+		setModalTagMode('img');
+
+		// Show modal and move keyboard focus to the Alt Text input field
+		els.imgTagModalBackdrop.hidden = false;
+		setTimeout(() => {
+			els.imgAltInput.focus();
+		}, 20);
+	}
+
+	/**
+	 * Closes the Image Tag Generator Modal and restores keyboard focus to the
+	 * "Generate Tag" button that originally opened it.
+	 */
+	function closeImageTagModal() {
+		state.modal.isOpen = false;
+		els.imgTagModalBackdrop.hidden = true;
+		if (state.modal.lastFocusedElement) {
+			state.modal.lastFocusedElement.focus();
+		}
+	}
+
+	/**
+	 * Switches the modal between `'img'` mode (`<img>` tag only) and `'figure'` mode
+	 * (`<figure>` + `<img>` + `<figcaption>`), showing or hiding the second input field
+	 * for the `<figcaption>` text accordingly.
+	 *
+	 * @param {'img'|'figure'} mode - Selected tag generation mode.
+	 */
+	function setModalTagMode(mode) {
+		state.modal.mode = mode;
+		const isFigure = mode === 'figure';
+
+		els.modeImgOnlyBtn.classList.toggle('active', !isFigure);
+		els.modeImgOnlyBtn.setAttribute('aria-pressed', !isFigure ? 'true' : 'false');
+
+		els.modeFigureBtn.classList.toggle('active', isFigure);
+		els.modeFigureBtn.setAttribute('aria-pressed', isFigure ? 'true' : 'false');
+
+		// Show the Caption Text (<figcaption>) field only when 'figure' mode is selected
+		els.figcaptionFieldGroup.hidden = !isFigure;
+
+		updateModalLivePreview();
+	}
+
+	/**
+	 * Builds the exact HTML string (`<img>` or `<figure>...</figure>`) based on
+	 * the current modal state (`imageUrl`, `altText`, `figcaptionText`, and `mode`).
+	 *
+	 * @returns {string} Generated HTML tag snippet.
+	 */
+	function buildModalImageHtmlSnippet() {
+		const safeUrl = escapeHtml(state.modal.imageUrl);
+		const safeAlt = escapeHtml(state.modal.altText);
+
+		if (state.modal.mode === 'figure') {
+			const safeCaption = escapeHtml(state.modal.figcaptionText);
+			return `<figure>\n  <img src="${safeUrl}" alt="${safeAlt}">\n  <figcaption>${safeCaption}</figcaption>\n</figure>`;
+		}
+
+		return `<img src="${safeUrl}" alt="${safeAlt}">`;
+	}
+
+	/**
+	 * Updates the `<code id="imgModalCodePreview">` box in real time whenever the
+	 * user types in the Alt Text or Figcaption input fields or switches the mode toggle.
+	 */
+	function updateModalLivePreview() {
+		els.imgModalCodePreview.textContent = buildModalImageHtmlSnippet();
+	}
+
+	/* ==========================================================================
+	   6. Helper & Utility Functions
 	   ========================================================================== */
 
 	/**
 	 * Combines the configured Base CDN URL (`state.baseUrl`) with a file's relative path
-	 * to produce a complete HTTPS URL.
+	 * to produce a complete URL.
 	 *
-	 * Example:
-	 *   base:         "https://jhmcdn.blob.core.windows.net/global-assets"
-	 *   relativePath: "js/cdn/jquery/4.7/jquery.min.js"
-	 *   returns:      "https://jhmcdn.blob.core.windows.net/global-assets/js/cdn/jquery/4.7/jquery.min.js"
-	 *
-	 * @param {string} relativePath - Path starting with `css/cdn/...` or `js/cdn/...`.
+	 * @param {string} relativePath - Path starting with `css/cdn/...`, `js/cdn/...`, or `img/cdn/...`.
 	 * @returns {string} Complete URL to the asset.
 	 */
 	function buildFullAssetUrl(relativePath) {
-		// `.replace(/\/+$/, '')` removes any trailing slashes from the base URL
 		const base = (state.baseUrl || DEFAULT_AZURE_CONTAINER_URL).replace(/\/+$/, '');
-		// `.replace(/^\/+/, '')` removes any leading slashes from the relative path
 		const cleanRel = relativePath.replace(/^\/+/, '');
 		return `${base}/${cleanRel}`;
 	}
 
 	/**
-	 * Builds a ready-to-paste HTML `<link>` or `<script>` tag for a given asset URL.
+	 * Builds a ready-to-paste HTML `<link>` or `<script>` tag for a given CSS or JS URL.
 	 *
 	 * @param {'css'|'js'} type - Asset category type.
 	 * @param {string} fullUrl  - Complete URL to the asset.
@@ -991,12 +1237,9 @@
 	 */
 	async function copyToClipboard(text, buttonEl, label) {
 		try {
-			// Modern asynchronous Clipboard API (supported in all modern browsers over HTTPS or localhost)
 			if (navigator.clipboard && navigator.clipboard.writeText) {
 				await navigator.clipboard.writeText(text);
 			} else {
-				// Legacy fallback for older browsers or non-secure contexts (e.g. file:// protocol):
-				// Creates an invisible <textarea>, selects the text inside it, and runs `execCommand('copy')`.
 				const textarea = document.createElement('textarea');
 				textarea.value = text;
 				textarea.style.position = 'fixed';
@@ -1027,23 +1270,26 @@
 	}
 
 	/**
-	 * Calculates the total number of JavaScript and CSS files currently loaded in
+	 * Calculates the total number of JavaScript, CSS, and Image files currently loaded in
 	 * `state.libraries` and updates the badge numbers inside the category filter tabs.
 	 */
 	function updateCategoryCounts() {
 		let jsCount = 0;
 		let cssCount = 0;
+		let imgCount = 0;
 
 		state.libraries.forEach((lib) => {
 			// Sum up the number of files across all versions of this library
 			const fileCount = lib.versions.reduce((sum, v) => sum + v.files.length, 0);
 			if (lib.type === 'js') jsCount += fileCount;
 			if (lib.type === 'css') cssCount += fileCount;
+			if (lib.type === 'img') imgCount += fileCount;
 		});
 
-		els.countAll.textContent = jsCount + cssCount;
+		els.countAll.textContent = jsCount + cssCount + imgCount;
 		els.countJs.textContent = jsCount;
 		els.countCss.textContent = cssCount;
+		if (els.countImg) els.countImg.textContent = imgCount;
 	}
 
 	/**
@@ -1138,10 +1384,6 @@
 	/**
 	 * Security helper: Escapes special HTML characters (`&`, `<`, `>`, `"`, `'`)
 	 * before inserting dynamic strings into `.innerHTML` templates.
-	 *
-	 * Why this is important:
-	 * It prevents broken HTML markup (for example, when storing `<script src="...">` inside
-	 * a `data-copy-text="..."` attribute) and protects against Cross-Site Scripting (XSS).
 	 *
 	 * @param {string} str - Raw string to escape.
 	 * @returns {string} HTML-safe string.
