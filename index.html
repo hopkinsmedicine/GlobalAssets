@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Johns Hopkins Medicine | Global Assets CDN</title>
+	<title>Johns Hopkins Medicine | Global Assets</title>
 	<link rel="icon" type="image/x-icon" href="img/favicon.ico">
 	<link rel="stylesheet" href="css/site.css">
 </head>
@@ -17,44 +17,36 @@
 				<img src="img/logo.png" alt="Johns Hopkins Medicine" class="brand-logo">
 				<span class="brand-divider" aria-hidden="true"></span>
 				<div class="brand-text">
-					<h1 class="brand-title">Global Assets Repository</h1>
+					<h1 class="brand-title">Global Assets</h1>
 				</div>
 			</div>
 
 			<div class="header-actions">
-				<div class="status-pill" id="sourceStatusPill" role="status" aria-live="polite" title="Current Asset Discovery Source">
-					<span class="status-dot" id="sourceStatusDot" aria-hidden="true"></span>
-					<span id="sourceStatusText">Connecting...</span>
+				<div class="source-pill" id="discoveryStatus" title="Asset Discovery Source" role="status" aria-live="polite">
+					<span class="status-dot" id="statusDot" aria-hidden="true"></span>
+					<span id="statusText">Scanning CDN...</span>
 				</div>
-				<a href="docs/index.html#user-guide" class="btn-icon" title="User Documentation">
+				<a href="docs/index.html" class="btn-icon" title="View User &amp; Developer Documentation">
 					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="17" height="17" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
 						<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
 					</svg>
-					<span>Docs</span>
+					<span>Documentation</span>
 				</a>
-				<button type="button" class="btn-icon" id="refreshBtn" title="Refresh Assets" aria-label="Sync and refresh CDN assets">
-					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="23 4 23 10 17 10"></polyline>
-						<polyline points="1 20 1 14 7 14"></polyline>
-						<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-					</svg>
-					<span>Sync</span>
-				</button>
 			</div>
 		</div>
 	</header>
 
-	<!-- Hero Search & Configuration Section -->
+	<!-- Hero / Search & Filter Section -->
 	<section class="hero-section" aria-labelledby="heroHeading">
 		<div class="container">
 			<div class="hero-content">
-				<h2 id="heroHeading">Centralized CDN Scripts &amp; Stylesheets</h2>
-				<p>Browse, filter, and copy production-ready JavaScript and CSS dependencies hosted on Azure Blob Storage.</p>
+				<h2 id="heroHeading">Centralized Static Assets &amp; Libraries</h2>
+				<p>Discover, filter by version, and copy production-ready CDN links or HTML tags for shared JavaScript, CSS, and official image assets.</p>
 
-				<!-- Search Box -->
-				<div class="search-bar-wrapper" role="search">
-					<svg class="search-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+				<!-- Search Bar -->
+				<div class="search-wrapper" role="search">
+					<svg aria-hidden="true" focusable="false" class="search-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
 						<circle cx="11" cy="11" r="8"></circle>
 						<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
 					</svg>
@@ -62,47 +54,53 @@
 						type="search"
 						id="searchInput"
 						class="search-input"
-						placeholder="Search libraries, versions, or file names (e.g., jquery, font-awesome, 5.3)..."
+						placeholder="Search libraries, versions, or filenames (e.g., jquery 5.3, font-awesome, jhm-logo)..."
+						aria-label="Search libraries, versions, or filenames"
 						autocomplete="off"
-						aria-label="Search CDN assets by library name, version, or filename"
 					>
-					<kbd class="search-shortcut" id="searchShortcutHint" aria-hidden="true" title="Press / to focus search">/</kbd>
+					<kbd class="search-shortcut" title="Press / to focus search" aria-hidden="true">/</kbd>
 				</div>
 
-				<!-- Toolbar: Category Filters + CDN Root Config -->
-				<div class="controls-bar">
+				<!-- Controls Row: Category Tabs + Base URL Config -->
+				<div class="toolbar">
 					<div class="filter-tabs" role="group" aria-label="Filter assets by category">
-						<button type="button" class="filter-tab active" data-filter="all" aria-pressed="true">
-							All Assets <span class="tab-count" id="countAll">0</span>
+						<button class="filter-tab active" data-filter="all" type="button" aria-pressed="true">
+							All Assets <span class="badge" id="countAll">0</span>
 						</button>
-						<button type="button" class="filter-tab" data-filter="js" aria-pressed="false">
-							<span class="badge-dot badge-js" aria-hidden="true"></span>
-							JavaScript <span class="tab-count" id="countJs">0</span>
+						<button class="filter-tab" data-filter="js" type="button" aria-pressed="false">
+							<span class="dot dot-js" aria-hidden="true"></span> JavaScript <span class="badge" id="countJs">0</span>
 						</button>
-						<button type="button" class="filter-tab" data-filter="css" aria-pressed="false">
-							<span class="badge-dot badge-css" aria-hidden="true"></span>
-							Stylesheets <span class="tab-count" id="countCss">0</span>
+						<button class="filter-tab" data-filter="css" type="button" aria-pressed="false">
+							<span class="dot dot-css" aria-hidden="true"></span> Stylesheets <span class="badge" id="countCss">0</span>
+						</button>
+						<button class="filter-tab" data-filter="img" type="button" aria-pressed="false">
+							<span class="dot dot-img" aria-hidden="true"></span> Images <span class="badge" id="countImg">0</span>
 						</button>
 					</div>
 
 					<div class="cdn-config">
-						<label for="sourceModeSelect" class="config-label">Source:</label>
-						<select id="sourceModeSelect" class="config-select" title="Choose how assets are discovered">
+						<label for="sourceModeSelect" class="cdn-label">Source:</label>
+						<select id="sourceModeSelect" class="cdn-select" title="Choose where to scan for /cdn/ assets">
 							<option value="auto">Auto (Smart Detect)</option>
 							<option value="azure">Azure Blob Live XML</option>
 							<option value="local">Local /cdn/ Folders</option>
 						</select>
-
-						<label for="baseUrlInput" class="config-label">CDN Base URL:</label>
-						<div class="base-url-group">
-							<input
-								type="url"
-								id="baseUrlInput"
-								class="base-url-input"
-								value="https://jhmcdn.blob.core.windows.net/global-assets"
-								title="Root URL used when generating Copy links and HTML tags"
-							>
-						</div>
+						<label for="baseUrlInput" class="cdn-label">Base URL:</label>
+						<input
+							type="url"
+							id="baseUrlInput"
+							class="cdn-input"
+							value="https://jhmcdn.blob.core.windows.net/global-assets"
+							title="Base URL used when generating Copy links and HTML snippets"
+						>
+						<button id="refreshBtn" class="btn-secondary" type="button" title="Re-scan CDN assets">
+							<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+								<polyline points="23 4 23 10 17 10"></polyline>
+								<polyline points="1 20 1 14 7 14"></polyline>
+								<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+							</svg>
+							Sync
+						</button>
 					</div>
 				</div>
 			</div>
@@ -111,59 +109,173 @@
 
 	<!-- Main Content Area -->
 	<main id="mainContent" class="main-content container" tabindex="-1">
-		<!-- Stats Summary Bar -->
-		<div class="summary-bar" id="summaryBar">
-			<div class="summary-left">
-				<span id="resultsSummaryText" role="status" aria-live="polite" aria-atomic="true">Loading libraries...</span>
-			</div>
-			<div class="summary-right">
-				<span class="structure-hint">
-					Convention: <code>/css/cdn/{library}/{version}/{file}</code> &amp; <code>/js/cdn/{library}/{version}/{file}</code>
-				</span>
-			</div>
-		</div>
-
 		<!-- Loading Skeleton -->
-		<div id="loadingState" class="loading-state" role="status" aria-live="polite">
+		<div id="loadingState" class="state-box" role="status" aria-live="polite">
 			<div class="spinner" aria-hidden="true"></div>
-			<p>Discovering assets from repository...</p>
+			<p>Discovering assets in <code>/css/cdn/</code>, <code>/js/cdn/</code>, and <code>/img/cdn/</code>...</p>
 		</div>
 
-		<!-- Empty State / Instructions -->
-		<div id="emptyState" class="empty-state" role="region" aria-labelledby="emptyStateTitle" hidden>
-			<div class="empty-icon" aria-hidden="true">
-				<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="44" height="44" stroke="currentColor" stroke-width="1.5" fill="none">
-					<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-					<line x1="9" y1="14" x2="15" y2="14"></line>
-				</svg>
-			</div>
-			<h3 id="emptyStateTitle">No matching assets found</h3>
-			<p id="emptyStateDesc">Try adjusting your search query or category filter, or upload files under <code>/css/cdn/</code> or <code>/js/cdn/</code>.</p>
-			<button type="button" class="btn-secondary" id="resetFiltersBtn">Reset Search &amp; Filters</button>
+		<!-- Empty / No Match State -->
+		<div id="emptyState" class="state-box hidden" role="status" aria-live="polite">
+			<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="1.5" fill="none">
+				<circle cx="11" cy="11" r="8"></circle>
+				<line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+			</svg>
+			<h3>No matching assets found</h3>
+			<p>Try clearing your search filter or switching asset categories.</p>
+			<button id="resetSearchBtn" class="btn-primary" type="button">Reset Filters</button>
 		</div>
 
 		<!-- Library Cards Grid -->
-		<div id="librariesGrid" class="libraries-grid"></div>
+		<div id="assetsGrid" class="assets-grid" aria-live="polite"></div>
 	</main>
 
 	<!-- Footer -->
 	<footer class="site-footer">
 		<div class="container footer-inner">
 			<div>
-				<strong>Johns Hopkins Medicine</strong> &mdash; Global Assets CDN Portal
+				<strong>Johns Hopkins Medicine</strong> &mdash; Global Assets CDN Repository
 			</div>
 			<nav class="footer-links" aria-label="Footer navigation">
-				<a href="docs/index.html#user-guide">User Guide</a>
+				<a href="docs/index.html">Documentation</a>
 				<span aria-hidden="true">&bull;</span>
-				<a href="docs/index.html#developer-guide">Developer Guide</a>
-				<span aria-hidden="true">&bull;</span>
-				<a href="https://jhmcdn.blob.core.windows.net/global-assets?restype=container&amp;comp=list" target="_blank" rel="noopener">View Azure Container XML <span class="sr-only">(opens in a new tab)</span></a>
+				<a href="https://jhmcdn.blob.core.windows.net/global-assets?restype=container&comp=list" target="_blank" rel="noopener">View Azure Container XML <span class="sr-only">(opens in a new tab)</span></a>
 			</nav>
 		</div>
 	</footer>
 
-	<!-- Copy Toast Notification -->
-	<div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="true"></div>
+	<!-- Image Tag Generator Modal (Predefined Metadata Array Edition) -->
+	<div id="imgTagModalBackdrop" class="modal-backdrop hidden" aria-hidden="true">
+		<div
+			id="imgTagModal"
+			class="modal-dialog"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="imgTagModalTitle"
+			aria-describedby="imgTagModalDesc"
+		>
+			<div class="modal-header">
+				<div>
+					<h3 id="imgTagModalTitle" class="modal-title">Generate Image HTML Tag</h3>
+					<p id="imgTagModalDesc" class="modal-subtitle">Select your tag format below. Official <code>alt</code> and <code>&lt;figcaption&gt;</code> text are pre-populated from the predefined <code>images</code> catalog.</p>
+				</div>
+				<button type="button" id="closeImgModalBtn" class="modal-close-btn" aria-label="Close modal">
+					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none">
+						<line x1="18" y1="6" x2="6" y2="18"></line>
+						<line x1="6" y1="6" x2="18" y2="18"></line>
+					</svg>
+				</button>
+			</div>
+
+			<div class="modal-body">
+				<!-- Image Preview Bar -->
+				<div class="modal-img-preview-bar">
+					<div class="modal-thumb-wrap">
+						<img id="modalImgPreview" src="" alt="Preview of selected CDN asset" class="modal-thumb-img">
+					</div>
+					<div class="modal-img-meta">
+						<div class="modal-meta-top-row">
+							<div id="modalImgName" class="modal-img-filename"></div>
+							<span id="modalPredefinedBadge" class="predefined-badge predefined-badge-ok">Predefined Metadata Loaded</span>
+						</div>
+						<div id="modalImgUrl" class="modal-img-url"></div>
+					</div>
+				</div>
+
+				<!-- Toggle: <img> only vs <img> with <figure> and <figcaption> -->
+				<div class="modal-field-group">
+					<span class="modal-label" id="tagModeGroupLabel">Tag Format</span>
+					<div class="modal-toggle-group" role="group" aria-labelledby="tagModeGroupLabel">
+						<button
+							type="button"
+							id="modeImgOnlyBtn"
+							class="modal-toggle-btn active"
+							data-mode="img"
+							aria-pressed="true"
+						>
+							<code>&lt;img&gt;</code> tag only
+						</button>
+						<button
+							type="button"
+							id="modeFigureBtn"
+							class="modal-toggle-btn"
+							data-mode="figure"
+							aria-pressed="false"
+						>
+							<code>&lt;img&gt;</code> with <code>&lt;figure&gt;</code> and <code>&lt;figcaption&gt;</code>
+						</button>
+					</div>
+				</div>
+
+				<!-- Predefined Metadata Header + Optional Unlock Toggle -->
+				<div class="modal-predefined-bar">
+					<span class="modal-predefined-note" id="modalPredefinedNote">
+						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+							<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+							<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+						</svg>
+						<span id="modalLockStatusText">Using predefined values from <code>images[]</code> array</span>
+					</span>
+					<button type="button" id="toggleEditPredefinedBtn" class="btn-unlock-meta" aria-pressed="false">
+						Unlock to Customize
+					</button>
+				</div>
+
+				<!-- Alt Text Input (Pre-populated from images[] array) -->
+				<div class="modal-field-group">
+					<label for="modalAltInput" class="modal-label">
+						Alt Text (<code>alt=""</code>) <span class="modal-label-hint">Predefined for accessibility</span>
+					</label>
+					<input
+						type="text"
+						id="modalAltInput"
+						class="modal-input is-readonly"
+						placeholder="No predefined alt text found in images[] array"
+						autocomplete="off"
+						readonly
+					>
+				</div>
+
+				<!-- Figcaption Input (Shown when <figure> mode is selected; pre-populated from images[] array) -->
+				<div id="modalCaptionGroup" class="modal-field-group hidden">
+					<label for="modalCaptionInput" class="modal-label">
+						Caption Text (<code>&lt;figcaption&gt;</code>) <span class="modal-label-hint">Predefined visible caption below image</span>
+					</label>
+					<input
+						type="text"
+						id="modalCaptionInput"
+						class="modal-input is-readonly"
+						placeholder="No predefined figcaption text found in images[] array"
+						autocomplete="off"
+						readonly
+					>
+				</div>
+
+				<!-- Live HTML Tag Preview -->
+				<div class="modal-field-group">
+					<div class="modal-preview-header">
+						<span class="modal-label">Generated HTML Tag</span>
+						<span class="modal-live-pill">Ready to Copy</span>
+					</div>
+					<pre class="modal-code-preview"><code id="modalCodeOutput"></code></pre>
+				</div>
+			</div>
+
+			<div class="modal-footer">
+				<button type="button" id="cancelImgModalBtn" class="btn-secondary">Cancel</button>
+				<button type="button" id="copyModalTagBtn" class="btn-primary modal-copy-btn">
+					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none">
+						<polyline points="16 18 22 12 16 6"></polyline>
+						<polyline points="8 6 2 12 8 18"></polyline>
+					</svg>
+					<span id="copyModalTagText">Copy Generated Tag</span>
+				</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Toast Notification -->
+	<div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 	<script src="js/site.js"></script>
 </body>

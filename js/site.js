@@ -1,725 +1,751 @@
 /**
  * ============================================================================
- * Johns Hopkins Medicine - Global Assets Portal (/js/site.js)
+ * Johns Hopkins Medicine — Global Assets Portal Logic (js/site.js)
+ * Branch: img-handler-cdn-alt-2 (Predefined Image Metadata Array Edition)
  * ============================================================================
  *
- * PURPOSE:
- * This file powers the user interface for the Johns Hopkins Medicine Global
- * Assets repository. It dynamically discovers CSS and JavaScript files hosted
- * in the repository, groups them by library and version, and renders an
- * interactive UI where users can search, filter, and copy CDN links.
+ * PURPOSE OF THIS FILE:
+ * This script powers the Global Assets web portal. Its job is to:
+ *   1. Automatically discover all CSS, JS, and Image files inside `/css/cdn/`,
+ *      `/js/cdn/`, and `/img/cdn/`.
+ *   2. Match discovered images against the predefined `images` metadata array
+ *      below so every image has official, pre-approved `alt` and `figcaption`
+ *      text ready to use.
+ *   3. Group discovered files by Library/Category Name and Version.
+ *   4. Render interactive cards on the page so users can search, filter by
+ *      category or version, and copy ready-to-use URLs or HTML tags (`<script>`,
+ *      `<link>`, `<img>`, or `<figure>` + `<figcaption>`).
  *
- * HOW DYNAMIC ASSET DISCOVERY WORKS (2-Tier Architecture):
- * 1. Tier 1 - Azure Blob Storage Live XML Listing:
- *    Queries Azure's built-in container listing API (?restype=container&comp=list).
- *    Automatically finds any files matching:
- *      - css/cdn/{library}/{version}/{file}
- *      - js/cdn/{library}/{version}/{file}
- *
- * 2. Tier 2 - Local Dev Server Folder Auto-Crawler:
- *    When running locally on a developer's machine via VS Code Live Server
- *    (localhost / 127.0.0.1), it crawls the HTML directory listings of
- *    /css/cdn/ and /js/cdn/ so newly added folders/files appear immediately
- *    on browser refresh without needing to upload to Azure first.
+ * HOW ASSET DISCOVERY WORKS (2-Tier Strategy):
+ *   - Tier 1 (Azure Blob Storage XML API):
+ *     In production, the portal queries Azure's public container listing XML:
+ *     `https://jhmcdn.blob.core.windows.net/global-assets?restype=container&comp=list`
+ *   - Tier 2 (Local Dev Server Folder Crawler):
+ *     When a developer runs a local web server (like VS Code "Live Server" on
+ *     `localhost` or `127.0.0.1`), the script crawls the local `/css/cdn/`,
+ *     `/js/cdn/`, and `/img/cdn/` folders so you can test new files before
+ *     uploading to Azure.
+ * ============================================================================
  */
 
-// We wrap the entire script in an IIFE (Immediately Invoked Function Expression)
-// `(function() { ... })()` so our variables and functions don't leak into the
-// global `window` object or collide with other scripts.
+/* ==========================================================================
+   PREDEFINED IMAGE METADATA CATALOG (`images` Array)
+   ==========================================================================
+   DEVELOPER INSTRUCTIONS:
+   Every time a new image is added inside the `/img/cdn/` directory, add a
+   matching object to this `images` array with:
+     - `source`: Path to the image inside `/img/cdn/` (supports `../img/cdn/...`,
+                 `img/cdn/...`, or `../images/cdn/...`)
+     - `alt`: Predefined accessible alternative text for the `alt=""` attribute
+     - `figcaption`: Predefined caption text for the `<figcaption>` element
+   ========================================================================== */
+const images = [
+	{
+		source: '../img/cdn/logos/jhm-logo.png',
+		alt: 'Johns Hopkins Medicine official horizontal logo',
+		figcaption: 'Johns Hopkins Medicine — Official Brand Mark'
+	}
+	// Add additional images below to match what is inside /img/cdn/:
+	// {
+	// 	source: '../img/cdn/logos/example-image.png',
+	// 	alt: 'Image alt text',
+	// 	figcaption: 'Image figcaption text'
+	// }
+];
+
 (function () {
 	'use strict';
 
+	/* ==========================================================================
+	   1. CONFIGURATION CONSTANTS
+	   ========================================================================== */
+
 	/**
-	 * Default root URL of the Azure Blob Storage container where assets live.
-	 * Used when building full CDN links for the "Copy URL" and "Copy <script>" buttons.
+	 * The production URL of the Azure Blob Storage container.
+	 * Used as the default Base URL when generating copyable CDN links.
 	 */
 	const DEFAULT_AZURE_CONTAINER_URL = 'https://jhmcdn.blob.core.windows.net/global-assets';
 
 	/**
-	 * Regular Expression used to validate and extract metadata from a file's path.
-	 *
-	 * Breakdown of `^\/?(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$`:
-	 * - `^\/?`       : Optional leading slash at the start of the path
-	 * - `(css|js)`   : Capture Group 1 -> Asset type ('css' or 'js')
-	 * - `\/cdn\/`    : Must be inside the `/cdn/` folder (ignores site.css and site.js!)
-	 * - `([^/]+)`    : Capture Group 2 -> Library folder name (e.g., 'jquery', 'font-awesome')
-	 * - `\/([^/]+)\/`: Capture Group 3 -> Version folder name (e.g., '4.1', '4.7', '5.3')
-	 * - `(.+)$`      : Capture Group 4 -> File name (or nested subpath, e.g., 'jquery.min.js')
+	 * Supported image file extensions for `/img/cdn/` assets.
 	 */
-	const CDN_PATH_REGEX = /^\/?(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$/i;
+	const IMAGE_EXTENSIONS_REGEX = /\.(png|jpe?g|svg|gif|webp|avif|ico)$/i;
 
-	/**
-	 * Central Application State.
-	 * Keeping all UI state in one object makes it easy to understand what the UI
-	 * is currently showing and re-render cleanly whenever the user types or clicks.
-	 */
+	/* ==========================================================================
+	   2. APPLICATION STATE
+	   ==========================================================================
+	   `state` holds the current runtime data for the UI:
+	   - `baseUrl`: The root URL prepended to every asset path when copying links.
+	   - `filterCategory`: Which tab is active ('all', 'js', 'css', or 'img').
+	   - `searchQuery`: Current text typed into the search box.
+	   - `selectedVersions`: Remembers which version dropdown option a user
+	     picked on a specific library card (keyed by `"type:library"`).
+	   - `libraries`: Array of grouped library objects built from the raw file list.
+	   - `modal`: State for the interactive "Generate Tag" image modal.
+	   ========================================================================== */
 	const state = {
-		libraries: [],          // Array of grouped library objects (created by groupAssetsIntoLibraries)
-		activeFilter: 'all',    // Currently selected category tab: 'all' | 'js' | 'css'
-		searchQuery: '',        // Current lowercase text in the search box
-		baseUrl: DEFAULT_AZURE_CONTAINER_URL, // Root CDN URL prepended to relative file paths
-		sourceMode: 'auto',     // Discovery mode selected in dropdown: 'auto' | 'azure' | 'local'
-		activeSourceLabel: ''   // Human-readable name of the source currently in use
+		baseUrl: DEFAULT_AZURE_CONTAINER_URL,
+		filterCategory: 'all',
+		searchQuery: '',
+		selectedVersions: {},
+		libraries: [],
+		modal: {
+			isOpen: false,
+			mode: 'img', // 'img' or 'figure'
+			fileUrl: '',
+			fileName: '',
+			predefinedAlt: '',
+			predefinedFigcaption: '',
+			hasPredefinedMatch: false,
+			isUnlockedForCustomEdit: false,
+			lastFocusedElement: null
+		}
 	};
 
-	/**
-	 * Cached DOM Element References.
-	 * We look up these elements once at startup instead of querying the DOM
-	 * repeatedly every time the UI re-renders.
-	 */
-	const els = {
+	/* ==========================================================================
+	   3. DOM ELEMENT REFERENCES
+	   ========================================================================== */
+	const dom = {
 		searchInput: document.getElementById('searchInput'),
 		filterTabs: document.querySelectorAll('.filter-tab'),
+		sourceModeSelect: document.getElementById('sourceModeSelect'),
+		baseUrlInput: document.getElementById('baseUrlInput'),
+		refreshBtn: document.getElementById('refreshBtn'),
+		resetSearchBtn: document.getElementById('resetSearchBtn'),
+		assetsGrid: document.getElementById('assetsGrid'),
+		loadingState: document.getElementById('loadingState'),
+		emptyState: document.getElementById('emptyState'),
+		statusDot: document.getElementById('statusDot'),
+		statusText: document.getElementById('statusText'),
 		countAll: document.getElementById('countAll'),
 		countJs: document.getElementById('countJs'),
 		countCss: document.getElementById('countCss'),
-		sourceModeSelect: document.getElementById('sourceModeSelect'),
-		baseUrlInput: document.getElementById('baseUrlInput'),
-		sourceStatusDot: document.getElementById('sourceStatusDot'),
-		sourceStatusText: document.getElementById('sourceStatusText'),
-		refreshBtn: document.getElementById('refreshBtn'),
-		resultsSummaryText: document.getElementById('resultsSummaryText'),
-		loadingState: document.getElementById('loadingState'),
-		emptyState: document.getElementById('emptyState'),
-		emptyStateTitle: document.getElementById('emptyStateTitle'),
-		emptyStateDesc: document.getElementById('emptyStateDesc'),
-		resetFiltersBtn: document.getElementById('resetFiltersBtn'),
-		librariesGrid: document.getElementById('librariesGrid'),
-		toastContainer: document.getElementById('toastContainer')
+		countImg: document.getElementById('countImg'),
+		toast: document.getElementById('toast'),
+
+		// Image Tag Generator Modal DOM Elements
+		imgTagModalBackdrop: document.getElementById('imgTagModalBackdrop'),
+		closeImgModalBtn: document.getElementById('closeImgModalBtn'),
+		cancelImgModalBtn: document.getElementById('cancelImgModalBtn'),
+		modalImgPreview: document.getElementById('modalImgPreview'),
+		modalImgName: document.getElementById('modalImgName'),
+		modalImgUrl: document.getElementById('modalImgUrl'),
+		modalPredefinedBadge: document.getElementById('modalPredefinedBadge'),
+		modalLockStatusText: document.getElementById('modalLockStatusText'),
+		toggleEditPredefinedBtn: document.getElementById('toggleEditPredefinedBtn'),
+		modeImgOnlyBtn: document.getElementById('modeImgOnlyBtn'),
+		modeFigureBtn: document.getElementById('modeFigureBtn'),
+		modalAltInput: document.getElementById('modalAltInput'),
+		modalCaptionGroup: document.getElementById('modalCaptionGroup'),
+		modalCaptionInput: document.getElementById('modalCaptionInput'),
+		modalCodeOutput: document.getElementById('modalCodeOutput'),
+		copyModalTagBtn: document.getElementById('copyModalTagBtn'),
+		copyModalTagText: document.getElementById('copyModalTagText')
 	};
 
 	/* ==========================================================================
-	   1. Initialization & Setup Functions
+	   4. PREDEFINED IMAGE METADATA LOOKUP HELPER
 	   ========================================================================== */
 
 	/**
-	 * Main entry point called once the HTML document finishes loading.
-	 * Detects the base URL, attaches event listeners, and kicks off the
-	 * initial asset discovery scan.
-	 */
-	function init() {
-		initBaseUrl();
-		bindEvents();
-		discoverAssets();
-	}
-
-	/**
-	 * Automatically detects the root Base URL based on where `index.html` is hosted:
+	 * Normalizes an image path from either the `images` array (`source`) or the
+	 * CDN discovery engine (`relativePath`) so they can be compared reliably.
 	 *
-	 * 1. If hosted on Azure Blob Storage (`*.blob.core.windows.net`):
-	 *    Extracts the container name from the URL path (e.g., `https://jhmcdn.blob.core.windows.net/global-assets`).
-	 * 2. If running on a local dev server (`localhost` or `127.0.0.1`):
-	 *    Uses the local server root URL (e.g., `http://127.0.0.1:5500`) so clicking "Open Raw File"
-	 *    or "Copy URL" points directly to the local files during local development.
+	 * Examples of input paths that all normalize to `"img/cdn/logos/jhm-logo.png"`:
+	 *   - `"../img/cdn/logos/jhm-logo.png"`
+	 *   - `"../images/cdn/logos/jhm-logo.png"`
+	 *   - `"/img/cdn/logos/jhm-logo.png"`
+	 *   - `"img/cdn/logos/jhm-logo.png"`
+	 *
+	 * @param {string} rawPath
+	 * @returns {string} Normalized path starting with `img/cdn/`
 	 */
-	function initBaseUrl() {
-		const loc = window.location;
-		if (loc.hostname.includes('blob.core.windows.net')) {
-			// Split the URL path by '/' and `.filter(Boolean)` removes empty strings
-			const parts = loc.pathname.split('/').filter(Boolean);
-			if (parts.length > 0) {
-				state.baseUrl = `${loc.origin}/${parts[0]}`;
-				els.baseUrlInput.value = state.baseUrl;
-			}
-		} else if (['localhost', '127.0.0.1'].includes(loc.hostname)) {
-			state.baseUrl = getLocalBaseUrl();
-			els.baseUrlInput.value = state.baseUrl;
+	function normalizeImageSourcePath(rawPath) {
+		let cleaned = String(rawPath || '')
+			.trim()
+			.replace(/\\/g, '/')
+			.replace(/^(\.\.\/|\.\/|\/)+/, '');
+
+		// Allow developers to write either `images/cdn/...` or `img/cdn/...` in `images[]`
+		cleaned = cleaned.replace(/^images\/cdn\//i, 'img/cdn/');
+
+		// If the path contains `img/cdn/` after a prefix, slice from `img/cdn/`
+		const cdnIdx = cleaned.toLowerCase().indexOf('img/cdn/');
+		if (cdnIdx !== -1) {
+			cleaned = cleaned.slice(cdnIdx);
 		}
+
+		return cleaned.toLowerCase();
 	}
 
 	/**
-	 * Computes the root directory URL when running on `localhost` / `127.0.0.1`.
-	 * For example, if viewing `http://127.0.0.1:5500/index.html`, this returns `http://127.0.0.1:5500`.
-	 * If viewing inside a subfolder `http://127.0.0.1:5500/GlobalAssets/index.html`,
-	 * it strips `/index.html` and returns `http://127.0.0.1:5500/GlobalAssets`.
+	 * Searches the predefined `images` array for an entry matching the given
+	 * discovered CDN image file.
 	 *
-	 * @returns {string} The local base URL without a trailing slash.
+	 * Matching priority:
+	 *   1. Exact normalized path match (e.g. `img/cdn/logos/jhm-logo.png`)
+	 *   2. Suffix match on `category/filename` or `filename` if a shorthand
+	 *      `source` was used in the `images` array.
+	 *
+	 * @param {string} relativePath - Discovered CDN path (e.g. `img/cdn/logos/jhm-logo.png`)
+	 * @param {string} fileName     - Discovered filename (e.g. `jhm-logo.png`)
+	 * @returns {{ source: string, alt: string, figcaption: string } | null}
 	 */
-	function getLocalBaseUrl() {
-		const loc = window.location;
-		const cleanPath = loc.pathname.replace(/\/index\.html$/i, '').replace(/\/+$/, '');
-		return `${loc.origin}${cleanPath}`;
-	}
+	function findPredefinedImageMeta(relativePath, fileName) {
+		if (!Array.isArray(images) || images.length === 0) return null;
 
-	/**
-	 * Registers all top-level UI event listeners (search bar, keyboard shortcuts,
-	 * category filter tabs, source dropdown, base URL input, and sync button).
-	 */
-	function bindEvents() {
-		// 1. Live Search Input: re-renders the grid on every keystroke
-		els.searchInput.addEventListener('input', (e) => {
-			state.searchQuery = e.target.value.trim().toLowerCase();
-			render();
-		});
+		const targetNormalized = normalizeImageSourcePath(relativePath);
+		const targetFileLower = String(fileName || '').toLowerCase();
 
-		// 2. Keyboard Shortcut: pressing '/' anywhere (when not already typing in an input)
-		//    immediately focuses the search box for quick lookup.
-		document.addEventListener('keydown', (e) => {
-			if (e.key === '/' && document.activeElement !== els.searchInput && document.activeElement !== els.baseUrlInput) {
-				e.preventDefault(); // Prevents '/' from being typed into the search input itself
-				els.searchInput.focus();
+		// 1. Try exact normalized path match first
+		for (const item of images) {
+			if (!item || !item.source) continue;
+			const candidateNormalized = normalizeImageSourcePath(item.source);
+			if (candidateNormalized === targetNormalized) {
+				return {
+					source: item.source,
+					alt: String(item.alt || ''),
+					figcaption: String(item.figcaption || '')
+				};
 			}
-		});
+		}
 
-		// 3. Category Filter Buttons ('All Assets', 'JavaScript', 'Stylesheets')
-		els.filterTabs.forEach((tab) => {
-			tab.addEventListener('click', () => {
-				// First, remove the active highlight and aria-pressed state from all buttons
-				els.filterTabs.forEach((t) => {
-					t.classList.remove('active');
-					t.setAttribute('aria-pressed', 'false');
-				});
-				// Then highlight the clicked button and update state.activeFilter
-				tab.classList.add('active');
-				tab.setAttribute('aria-pressed', 'true');
-				state.activeFilter = tab.dataset.filter;
-				render();
-			});
-		});
-
-		// 4. Discovery Source Dropdown ('auto', 'azure', 'local')
-		els.sourceModeSelect.addEventListener('change', (e) => {
-			state.sourceMode = e.target.value;
-
-			// Automatically sync the Base URL input when switching between Azure and Local on localhost
-			const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-			if (state.sourceMode === 'azure') {
-				state.baseUrl = DEFAULT_AZURE_CONTAINER_URL;
-				els.baseUrlInput.value = state.baseUrl;
-			} else if (isLocalhost && (state.sourceMode === 'local' || state.sourceMode === 'auto')) {
-				state.baseUrl = getLocalBaseUrl();
-				els.baseUrlInput.value = state.baseUrl;
+		// 2. Fallback: match by filename at the end of `source`
+		for (const item of images) {
+			if (!item || !item.source) continue;
+			const candidateNormalized = normalizeImageSourcePath(item.source);
+			const candidateFileName = candidateNormalized.split('/').pop();
+			if (candidateFileName && candidateFileName === targetFileLower) {
+				return {
+					source: item.source,
+					alt: String(item.alt || ''),
+					figcaption: String(item.figcaption || '')
+				};
 			}
+		}
 
-			discoverAssets();
-		});
-
-		// 5. Base CDN URL Input: strips any trailing slashes (`\/+$`) so we don't
-		//    accidentally generate double slashes like `.../global-assets//js/...`
-		els.baseUrlInput.addEventListener('input', (e) => {
-			state.baseUrl = e.target.value.trim().replace(/\/+$/, '');
-			render();
-		});
-
-		// 6. Manual Sync / Refresh Button
-		els.refreshBtn.addEventListener('click', () => {
-			discoverAssets(true);
-		});
-
-		// 7. Reset Search & Filters Button (shown in the Empty State when a search has 0 hits)
-		els.resetFiltersBtn.addEventListener('click', () => {
-			state.searchQuery = '';
-			state.activeFilter = 'all';
-			els.searchInput.value = '';
-			els.filterTabs.forEach((t) => {
-				const isAll = t.dataset.filter === 'all';
-				t.classList.toggle('active', isAll);
-				t.setAttribute('aria-pressed', isAll ? 'true' : 'false');
-			});
-			render();
-			els.searchInput.focus();
-		});
+		return null;
 	}
 
 	/* ==========================================================================
-	   2. Dynamic Asset Discovery Engine (Azure Live XML + Local Folder Crawler)
+	   5. CDN PATH PARSER (`css/cdn/`, `js/cdn/`, and `img/cdn/`)
 	   ========================================================================== */
 
 	/**
-	 * Orchestrates asset discovery across our 2 tiers (Azure Blob Live XML and
-	 * Local Dev Server Crawler) based on the current environment and the user's
-	 * selected `state.sourceMode`.
+	 * Parses a relative CDN file path into its structured components:
+	 *   - `type`: `'css'`, `'js'`, or `'img'`
+	 *   - `library`: Library or image category folder slug (e.g. `'jquery'`, `'logos'`)
+	 *   - `version`: Version folder name (e.g. `'5.3.8'`), or `'latest'` for flat image folders
+	 *   - `fileName`: The file name (e.g. `'jquery.min.js'` or `'jhm-logo.png'`)
 	 *
-	 * @param {boolean} [isManualRefresh=false] - True if triggered by clicking the "Sync" button
-	 *                                            (shows a toast notification when finished).
+	 * Supported directory patterns:
+	 *   1. Standard versioned library/asset:
+	 *      `{css|js|img}/cdn/{library}/{version}/{file}`
+	 *   2. Flat category folder for images (no version subfolder needed; version can be in filename):
+	 *      `img/cdn/{category}/{file}` -> `library = category`, `version = 'latest'`
+	 *   3. Root image inside `img/cdn/`:
+	 *      `img/cdn/{file}` -> `library = 'general'`, `version = 'latest'`
+	 *
+	 * @param {string} rawRelativePath
+	 * @returns {{ type: string, library: string, version: string, fileName: string, relativePath: string } | null}
 	 */
-	async function discoverAssets(isManualRefresh = false) {
+	function parseCdnAssetPath(rawRelativePath) {
+		const cleanPath = String(rawRelativePath || '').replace(/^\/+/, '');
+
+		// 1. Check `css/cdn/{library}/{version}/{file}` or `js/cdn/{library}/{version}/{file}`
+		const cssJsMatch = cleanPath.match(/^(css|js)\/cdn\/([^/]+)\/([^/]+)\/(.+)$/i);
+		if (cssJsMatch) {
+			const type = cssJsMatch[1].toLowerCase();
+			const library = cssJsMatch[2];
+			const version = cssJsMatch[3];
+			const fileName = cssJsMatch[4];
+			if (!/\.(css|js|map)$/i.test(fileName)) return null;
+			return { type, library, version, fileName, relativePath: cleanPath };
+		}
+
+		// 2. Check `img/cdn/...`
+		if (/^img\/cdn\//i.test(cleanPath)) {
+			const parts = cleanPath.split('/');
+			const fileName = parts[parts.length - 1];
+			if (!IMAGE_EXTENSIONS_REGEX.test(fileName)) return null;
+
+			if (parts.length === 3) {
+				// Pattern: img/cdn/{file}
+				return {
+					type: 'img',
+					library: 'general',
+					version: 'latest',
+					fileName,
+					relativePath: cleanPath
+				};
+			} else if (parts.length === 4) {
+				// Pattern: img/cdn/{category}/{file} (e.g., img/cdn/logos/jhm-logo.png)
+				return {
+					type: 'img',
+					library: parts[2],
+					version: 'latest',
+					fileName,
+					relativePath: cleanPath
+				};
+			} else if (parts.length >= 5) {
+				// Pattern: img/cdn/{category}/{version}/{file}
+				return {
+					type: 'img',
+					library: parts[2],
+					version: parts[3],
+					fileName: parts.slice(4).join('/'),
+					relativePath: cleanPath
+				};
+			}
+		}
+
+		return null;
+	}
+
+	/* ==========================================================================
+	   6. ASSET DISCOVERY ENGINE (AZURE XML + LOCAL DEV CRAWLER)
+	   ========================================================================== */
+
+	/**
+	 * Main entry point for scanning and loading CDN assets.
+	 *
+	 * How it decides where to scan:
+	 *   - If the user explicitly selected "Azure Blob Live XML" or "Local /cdn/ Folders"
+	 *     in the Source dropdown, it honors that choice.
+	 *   - If set to "Auto (Smart Detect)":
+	 *       * On `localhost` / `127.0.0.1`, it crawls the local folders first so
+	 *         developers can test new files immediately.
+	 *       * In production (Azure), it queries the Azure Blob XML API first.
+	 */
+	async function discoverAssets() {
 		setLoading(true);
-		updateStatus('connecting', 'Scanning repository...');
-
-		// Check if the developer is running on a local web server (e.g., VS Code Live Server)
-		const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-
-		let items = [];
-		let sourceUsed = '';
+		const mode = dom.sourceModeSelect ? dom.sourceModeSelect.value : 'auto';
+		const isLocalhost =
+			window.location.hostname === 'localhost' ||
+			window.location.hostname === '127.0.0.1';
 
 		try {
-			if (state.sourceMode === 'azure') {
-				// User explicitly selected "Azure Blob Live XML" in the dropdown
-				items = await fetchFromAzureBlobXml(state.baseUrl);
-				sourceUsed = 'Azure Blob Live';
-			} else if (state.sourceMode === 'local') {
-				// User explicitly selected "Local /cdn/ Folders" in the dropdown
-				items = await crawlLocalCdnDirectories();
-				sourceUsed = 'Local /cdn/ Folders';
-			} else {
-				// Default 'auto' mode (Smart Detect):
-				// TIER 2 (Local Dev): If running on localhost, crawl local `/css/cdn/` and `/js/cdn/` first.
-				// This lets developers add a folder locally and see it immediately on refresh!
-				if (isLocalhost) {
-					items = await crawlLocalCdnDirectories();
-					if (items.length > 0) {
-						sourceUsed = 'Local Dev Server (/cdn/)';
-					}
+			// Mode 1: Developer forced "Local /cdn/ Folders"
+			if (mode === 'local') {
+				const localFiles = await fetchFromLocalDirectoryListing();
+				if (localFiles && localFiles.length > 0) {
+					setDiscoveryStatus('Local /cdn/ Folders (Live)', true);
+					processDiscoveredFiles(localFiles);
+					return;
 				}
+				setDiscoveryStatus('Local Scan Empty (Use Live Server)', false);
+				processDiscoveredFiles([]);
+				return;
+			}
 
-				// TIER 1 (Azure Production): If not on localhost (or local crawl returned nothing),
-				// query Azure Blob Live XML.
-				// Note: Always use the Azure container URL (not a localhost URL) when querying Azure XML!
-				if (items.length === 0) {
-					const azureContainerUrl = isLocalhost ? DEFAULT_AZURE_CONTAINER_URL : state.baseUrl;
-					const azureItems = await fetchFromAzureBlobXml(azureContainerUrl);
-					if (azureItems.length > 0) {
-						items = azureItems;
-						sourceUsed = 'Azure Blob Live';
-						// If we fell back to Azure Live while on localhost, update baseUrl to Azure so links work
-						if (isLocalhost) {
-							state.baseUrl = azureContainerUrl;
-							els.baseUrlInput.value = state.baseUrl;
-						}
-					} else {
-						sourceUsed = 'Azure Blob Live (0 CDN files found)';
-					}
+			// Mode 2: User forced "Azure Blob Live XML"
+			if (mode === 'azure') {
+				const azureFiles = await fetchFromAzureBlobXml(state.baseUrl);
+				if (azureFiles && azureFiles.length > 0) {
+					setDiscoveryStatus('Azure Blob XML (Live)', true);
+					processDiscoveredFiles(azureFiles);
+					return;
 				}
 			}
+
+			// Mode 3: "Auto (Smart Detect)" on localhost -> try local folders first
+			if (mode === 'auto' && isLocalhost) {
+				const localFiles = await fetchFromLocalDirectoryListing();
+				if (localFiles && localFiles.length > 0) {
+					setDiscoveryStatus('Local /cdn/ Folders (Live)', true);
+					processDiscoveredFiles(localFiles);
+					return;
+				}
+			}
+
+			// Mode 4: Default Production path -> query Azure Blob Storage XML API
+			const azureFiles = await fetchFromAzureBlobXml(state.baseUrl);
+			if (azureFiles && azureFiles.length > 0) {
+				setDiscoveryStatus('Azure Blob XML (Live)', true);
+				processDiscoveredFiles(azureFiles);
+				return;
+			}
+
+			// Fallback if Azure XML returned nothing (e.g., offline local server)
+			const localFiles = await fetchFromLocalDirectoryListing();
+			if (localFiles && localFiles.length > 0) {
+				setDiscoveryStatus('Local /cdn/ Folders (Live)', true);
+				processDiscoveredFiles(localFiles);
+				return;
+			}
+
+			// If both tiers returned zero files, show the empty state
+			setDiscoveryStatus('No CDN Assets Found', false);
+			processDiscoveredFiles([]);
 		} catch (err) {
-			console.warn('Discovery warning:', err);
-			sourceUsed = 'Connection Error';
-		}
-
-		// Transform the flat array of file paths into structured library -> version -> files objects
-		state.libraries = groupAssetsIntoLibraries(items);
-		state.activeSourceLabel = sourceUsed;
-
-		// Update the top header status indicator pill and render the cards
-		const isAzure = sourceUsed.includes('Azure');
-		updateStatus(isAzure ? 'online' : 'local', sourceUsed);
-		setLoading(false);
-		render();
-
-		if (isManualRefresh) {
-			showToast(`Synced ${countTotalFiles(state.libraries)} asset files from ${sourceUsed}`);
+			console.warn('Asset discovery encountered an error:', err);
+			setDiscoveryStatus('Discovery Error', false);
+			processDiscoveredFiles([]);
+		} finally {
+			setLoading(false);
 		}
 	}
 
 	/**
-	 * TIER 1 DISCOVERY: Fetches and parses the live XML blob list from Azure Blob Storage.
+	 * TIER 1: Queries Azure Blob Storage's public XML container listing API.
 	 *
-	 * How Azure Container Listing works:
-	 * When a container's public access level is set to "Container", calling
-	 * `https://<account>.blob.core.windows.net/<container>?restype=container&comp=list`
-	 * returns an XML document listing up to 5,000 blobs at a time:
-	 *   <EnumerationResults>
-	 *     <Blobs>
-	 *       <Blob>
-	 *         <Name>js/cdn/jquery/5.3/jquery.min.js</Name>
-	 *         <Properties>
-	 *           <Content-Length>87532</Content-Length>
-	 *           <Last-Modified>Tue, 03 Nov 2026 14:34:04 GMT</Last-Modified>
-	 *         </Properties>
-	 *       </Blob>
-	 *     </Blobs>
-	 *     <NextMarker>...</NextMarker>
-	 *   </EnumerationResults>
+	 * Endpoint format:
+	 *   `{containerUrl}?restype=container&comp=list`
 	 *
-	 * @param {string} containerBaseUrl - The root URL of the Azure Blob container.
-	 * @returns {Promise<Array<{path: string, size: number|null, lastModified: string|null}>>}
+	 * Supports Azure's `<NextMarker>` pagination in case the container ever grows
+	 * past 5,000 blobs, and filters solely for files matching `/css/cdn/`, `/js/cdn/`,
+	 * or `/img/cdn/`.
+	 *
+	 * @param {string} containerUrl - Base URL of the Azure Blob container
+	 * @returns {Promise<Array|null>} Array of file metadata objects, or null on failure
 	 */
-	async function fetchFromAzureBlobXml(containerBaseUrl) {
-		const cleanBase = (containerBaseUrl || DEFAULT_AZURE_CONTAINER_URL).replace(/\/+$/, '');
-		const discovered = [];
-		let marker = '';
+	async function fetchFromAzureBlobXml(containerUrl) {
+		try {
+			const cleanBase = containerUrl.replace(/\/+$/, '');
+			const discovered = [];
+			let marker = '';
 
-		// We use a `do ... while (marker)` loop to handle Azure pagination.
-		// If the container ever holds more than 5,000 files, Azure provides a `<NextMarker>`
-		// token which we pass back in the next request until `<NextMarker>` is empty.
-		do {
-			// `_t=${Date.now()}` is a cache-buster query param so the browser always fetches fresh XML
-			const listUrl = `${cleanBase}?restype=container&comp=list${marker ? `&marker=${encodeURIComponent(marker)}` : ''}&_t=${Date.now()}`;
-			const response = await fetch(listUrl, { method: 'GET' });
-			if (!response.ok) {
-				throw new Error(`Azure list returned HTTP ${response.status}`);
-			}
+			// Loop through pages until Azure returns an empty <NextMarker>
+			do {
+				const listUrl =
+					`${cleanBase}?restype=container&comp=list` +
+					(marker ? `&marker=${encodeURIComponent(marker)}` : '');
 
-			const xmlText = await response.text();
+				const response = await fetch(listUrl, { method: 'GET', mode: 'cors', cache: 'no-store' });
+				if (!response.ok) return null;
 
-			// IMPORTANT: Azure Blob Storage responses often include a hidden UTF-8 Byte Order Mark
-			// (BOM character `\uFEFF`) at the very beginning of the response. We strip it before
-			// passing the string to `DOMParser`, otherwise some browsers fail to parse the XML.
-			const cleanXml = xmlText.replace(/^\uFEFF/, '').trim();
-			const parser = new DOMParser();
-			const xmlDoc = parser.parseFromString(cleanXml, 'application/xml');
+				const xmlText = await response.text();
+				const parser = new DOMParser();
+				const xmlDoc = parser.parseFromString(xmlText, 'application/xml');
 
-			// Loop over every `<Blob>` element in the XML response
-			const blobNodes = xmlDoc.querySelectorAll('Blobs > Blob');
-			blobNodes.forEach((blobNode) => {
-				const nameNode = blobNode.querySelector('Name');
-				if (!nameNode) return;
+				// Abort if response is not valid XML
+				if (xmlDoc.querySelector('parsererror')) return null;
 
-				const blobPath = nameNode.textContent.trim();
+				const blobs = xmlDoc.querySelectorAll('Blobs > Blob');
+				blobs.forEach((blobNode) => {
+					const nameNode = blobNode.querySelector('Name');
+					if (!nameNode) return;
 
-				// Only keep files that match our `/css/cdn/...` or `/js/cdn/...` convention.
-				// This automatically ignores `index.html`, `css/site.css`, `js/site.js`, `img/*`, etc.
-				if (CDN_PATH_REGEX.test(blobPath)) {
-					const lengthNode = blobNode.querySelector('Properties > Content-Length');
-					const modNode = blobNode.querySelector('Properties > Last-Modified');
+					const relativePath = nameNode.textContent.trim().replace(/^\/+/, '');
+					if (!parseCdnAssetPath(relativePath)) return;
+
+					const sizeNode = blobNode.querySelector('Properties > Content-Length');
+					const lastModNode = blobNode.querySelector('Properties > Last-Modified');
+
 					discovered.push({
-						path: blobPath.replace(/^\/+/, ''),
-						size: lengthNode ? parseInt(lengthNode.textContent, 10) : null,
-						lastModified: modNode ? modNode.textContent : null
+						path: relativePath,
+						size: sizeNode ? parseInt(sizeNode.textContent, 10) : null,
+						lastModified: lastModNode ? lastModNode.textContent.trim() : null
 					});
-				}
-			});
+				});
 
-			// Check if Azure returned a pagination marker for the next page of results
-			const nextMarkerNode = xmlDoc.querySelector('NextMarker');
-			marker = nextMarkerNode && nextMarkerNode.textContent ? nextMarkerNode.textContent.trim() : '';
-		} while (marker);
+				const nextMarkerNode = xmlDoc.querySelector('NextMarker');
+				marker = nextMarkerNode && nextMarkerNode.textContent ? nextMarkerNode.textContent.trim() : '';
+			} while (marker);
 
-		return discovered;
+			return discovered;
+		} catch (e) {
+			return null;
+		}
 	}
 
 	/**
-	 * TIER 2 DISCOVERY: Crawls local `/css/cdn/` and `/js/cdn/` folders when running
-	 * on a local development server (such as VS Code Live Server, Python http.server, etc.).
+	 * TIER 2: Crawls local `/css/cdn/`, `/js/cdn/`, and `/img/cdn/` directory listings
+	 * when running a local development web server (e.g., VS Code Live Server,
+	 * Python `http.server`, or `npx serve`).
 	 *
-	 * @returns {Promise<Array<{path: string, size: number|null, lastModified: string|null}>>}
+	 * Note: Browsers do not allow `fetch()` to list folders over `file://`,
+	 * so this function returns `null` immediately if opened via `file://`.
+	 *
+	 * @returns {Promise<Array|null>} Array of discovered file objects, or null
 	 */
-	async function crawlLocalCdnDirectories() {
-		const roots = ['css/cdn/', 'js/cdn/'];
-		const discovered = [];
+	async function fetchFromLocalDirectoryListing() {
+		if (window.location.protocol === 'file:') return null;
 
-		for (const root of roots) {
-			try {
-				const files = await crawlDirectoryRecursive(root, 0);
-				discovered.push(...files);
-			} catch (_) {
-				// Ignore errors if a folder doesn't exist yet or directory browsing is disabled
-			}
-		}
+		try {
+			const roots = ['css/cdn/', 'js/cdn/', 'img/cdn/'];
+			const discovered = [];
 
-		// Optional secondary local fallback: if the local server has directory listing
-		// turned off, check if a static `js/assets-manifest.json` file exists.
-		if (discovered.length === 0) {
-			try {
-				const res = await fetch(`js/assets-manifest.json?_t=${Date.now()}`);
-				if (res.ok) {
-					const manifest = await res.json();
-					if (Array.isArray(manifest)) {
-						return manifest.map((item) => (typeof item === 'string' ? { path: item } : item));
+			/**
+			 * Recursive helper that fetches an HTML directory listing page,
+			 * extracts all `<a href="...">` links, and either records matching
+			 * asset files or drills down into subfolders.
+			 *
+			 * @param {string} dirPath - Current relative directory path (always ends with `/`)
+			 * @param {number} depth   - Current recursion depth (capped at 4 to prevent infinite loops)
+			 */
+			async function crawlDirectory(dirPath, depth) {
+				if (depth > 4) return;
+				const res = await fetch(dirPath, { cache: 'no-store' });
+				if (!res.ok) return;
+
+				const contentType = res.headers.get('content-type') || '';
+				if (!contentType.includes('text/html')) return;
+
+				const html = await res.text();
+				const doc = new DOMParser().parseFromString(html, 'text/html');
+				const anchors = Array.from(doc.querySelectorAll('a[href]'));
+
+				for (const a of anchors) {
+					const rawHref = a.getAttribute('href');
+					if (
+						!rawHref ||
+						rawHref.startsWith('?') ||
+						rawHref.startsWith('#') ||
+						rawHref === '../' ||
+						rawHref === '/'
+					) {
+						continue;
+					}
+
+					// Resolve the link against the current directory URL
+					const resolvedUrl = new URL(rawHref, new URL(dirPath, window.location.href));
+					const basePath = window.location.pathname.replace(/\/index\.html$/i, '/').replace(/\/+$/, '/');
+					if (!resolvedUrl.pathname.startsWith(basePath)) continue;
+
+					const rel = decodeURIComponent(resolvedUrl.pathname.slice(basePath.length)).replace(/^\/+/, '');
+					if (!rel || rel === dirPath || !dirPath.startsWith(rel.split('/')[0])) continue;
+
+					/**
+					 * IMPORTANT FIX FOR VERSION FOLDERS (e.g., `4.1`, `5.3`, `5.3.2`):
+					 * Dev servers like VS Code Live Server often omit the trailing `/`
+					 * on directory links (`href="/css/cdn/font-awesome/4.1"`).
+					 * Because version numbers contain a dot (`.`), a naive filename check
+					 * would mistake `4.1` for a file extension and skip crawling inside it!
+					 *
+					 * Instead, we explicitly check if the link ends with a real asset file
+					 * extension (`.js`, `.css`, `.png`, `.svg`, etc.). If not, we treat it as a subfolder.
+					 */
+					const isKnownAssetFile = /\.(css|js|map|png|jpe?g|svg|gif|webp|avif|ico|woff2?|ttf|eot|json|txt|md)$/i.test(rel);
+
+					if (rawHref.endsWith('/') || !isKnownAssetFile) {
+						const nextDir = rel.endsWith('/') ? rel : rel + '/';
+						if (nextDir.startsWith(dirPath) && nextDir !== dirPath) {
+							await crawlDirectory(nextDir, depth + 1);
+						}
+					} else if (parseCdnAssetPath(rel)) {
+						discovered.push({ path: rel, size: null, lastModified: null });
 					}
 				}
-			} catch (_) {
-				// Ignore if manifest file is not present
 			}
+
+			for (const root of roots) {
+				await crawlDirectory(root, 0);
+			}
+
+			return discovered.length > 0 ? discovered : null;
+		} catch (e) {
+			return null;
 		}
-
-		return discovered;
-	}
-
-	/**
-	 * Recursively walks a local directory listing HTML page returned by a dev server
-	 * (like VS Code Live Server) to find all nested asset files.
-	 *
-	 * How this works step-by-step for a junior developer:
-	 * 1. When you request a folder URL like `http://127.0.0.1:5500/js/cdn/` from Live Server,
-	 *    Live Server responds with an HTML web page containing `<a href="...">` links for
-	 *    every subfolder (`jquery`) and file inside that directory.
-	 * 2. We fetch that HTML, parse it into a virtual DOM document using `DOMParser`, and
-	 *    extract all `<a href="...">` tags.
-	 * 3. For each link:
-	 *    - If it's a subfolder (like `jquery` or version folder `4.7`), this function calls
-	 *      itself recursively (`crawlDirectoryRecursive`) to look inside that subfolder.
-	 *    - If it's an actual asset file (like `jquery.min.js`), we add it to our results list!
-	 *
-	 * @param {string} dirPath - Relative directory path to scan (e.g., 'js/cdn/jquery/').
-	 * @param {number} depth   - Current recursion depth (capped at 4 to prevent infinite loops).
-	 * @returns {Promise<Array<{path: string, size: null, lastModified: null}>>}
-	 */
-	async function crawlDirectoryRecursive(dirPath, depth) {
-		// Safety guard: never recurse deeper than 4 levels (type -> cdn -> library -> version -> file)
-		if (depth > 4) return [];
-
-		const res = await fetch(dirPath);
-		if (!res.ok) return [];
-
-		// Verify the server actually returned an HTML directory listing page
-		const contentType = res.headers.get('content-type') || '';
-		if (!contentType.includes('text/html')) return [];
-
-		const html = await res.text();
-		const parser = new DOMParser();
-		const doc = parser.parseFromString(html, 'text/html');
-		const links = Array.from(doc.querySelectorAll('a[href]'));
-
-		const results = [];
-		for (const a of links) {
-			const rawHref = a.getAttribute('href');
-
-			// Skip empty links, parent directory links ('../'), current directory ('./'),
-			// or sorting query links ('?C=N;O=D') generated by some web servers.
-			if (!rawHref || rawHref === '../' || rawHref === './' || rawHref.startsWith('?') || rawHref.startsWith('#')) {
-				continue;
-			}
-
-			// Convert the link's `href` (which may be relative or root-relative) into a clean
-			// full URL using the browser's native `URL` constructor, then extract its pathname.
-			const resolvedUrl = new URL(rawHref, new URL(dirPath, window.location.origin + window.location.pathname));
-			let relPath = resolvedUrl.pathname.replace(/^\/+/, '');
-
-			// If the developer opened a parent folder in VS Code (so the URL is e.g.
-			// `/GlobalAssets/js/cdn/jquery`), strip the leading `/GlobalAssets/` prefix
-			// so `relPath` always starts cleanly with `css/cdn/` or `js/cdn/`.
-			const matchIdx = relPath.search(/(css|js)\/cdn\//i);
-			if (matchIdx > 0) {
-				relPath = relPath.slice(matchIdx);
-			}
-
-			// Crucial safety check: ignore any link that points *outside* or *above* the
-			// directory we are currently scanning (such as a "Parent Directory" link).
-			if (!relPath.startsWith(dirPath.replace(/^\/+/, ''))) {
-				continue;
-			}
-
-			// Determine whether this link is a SUBFOLDER or a FILE:
-			// Tricky edge case: Version folders are named things like "4.7" or "5.3.1".
-			// Notice that "4.7" contains a dot! And VS Code Live Server does NOT put a
-			// trailing slash on folder links (`href="/js/cdn/jquery/4.7"`).
-			// So if we checked "does it have a dot?", we would mistakenly think folder "4.7"
-			// is a file with a ".7" extension!
-			// Instead, we check if the last segment ends with a real web asset file extension.
-			const lastSegment = relPath.replace(/\/+$/, '').split('/').pop() || '';
-			const isKnownAssetFile = /\.(js|mjs|cjs|css|map|woff2?|ttf|eot|svg|otf|json|png|jpg|jpeg|gif|webp|ico)$/i.test(lastSegment);
-
-			if (rawHref.endsWith('/') || !isKnownAssetFile) {
-				// It's a folder (e.g., 'jquery' or '4.7') -> recurse inside it!
-				const subDir = relPath.endsWith('/') ? relPath : `${relPath}/`;
-				const subFiles = await crawlDirectoryRecursive(subDir, depth + 1);
-				results.push(...subFiles);
-			} else if (CDN_PATH_REGEX.test(relPath)) {
-				// It's a valid asset file inside `/css/cdn/...` or `/js/cdn/...` -> record it!
-				results.push({
-					path: relPath,
-					size: null,
-					lastModified: null
-				});
-			}
-		}
-		return results;
 	}
 
 	/* ==========================================================================
-	   3. Grouping & Sorting Logic
+	   7. DATA NORMALIZATION, GROUPING & VERSION SORTING
 	   ========================================================================== */
 
 	/**
-	 * Converts a flat array of discovered file objects into a structured, hierarchical
-	 * list of libraries and versions ready for the UI to render.
+	 * Takes the flat list of discovered file paths (`css/cdn/...`, `js/cdn/...`, `img/cdn/...`),
+	 * groups them into libraries and versions, matches images against the predefined
+	 * `images` metadata array, sorts them (newest version first), and triggers a UI render.
 	 *
-	 * Input example (flat array):
-	 *   [
-	 *     { path: 'js/cdn/jquery/4.1/jquery.min.js' },
-	 *     { path: 'js/cdn/jquery/5.3/jquery.min.js' }
-	 *   ]
-	 *
-	 * Output example (grouped by Library -> Versions -> Files):
-	 *   [
-	 *     {
-	 *       id: 'js:jquery',
-	 *       type: 'js',
-	 *       name: 'jquery',
-	 *       displayName: 'jQuery',
-	 *       selectedVersion: 'all',
-	 *       versions: [
-	 *         { version: '5.3', files: [{ fileName: 'jquery.min.js', ... }] },
-	 *         { version: '4.1', files: [{ fileName: 'jquery.min.js', ... }] }
-	 *       ]
-	 *     }
-	 *   ]
-	 *
-	 * @param {Array<{path: string, size?: number|null, lastModified?: string|null}>} items
-	 * @returns {Array<Object>} Sorted array of library objects.
+	 * @param {Array<{path: string, size: number|null, lastModified: string|null}>} rawFiles
 	 */
-	function groupAssetsIntoLibraries(items) {
-		// We use a JavaScript `Map` keyed by `type:libraryName` (e.g., `js:jquery`)
-		// so if a library has both CSS and JS files, they get separate CSS and JS cards.
-		const libMap = new Map();
+	function processDiscoveredFiles(rawFiles) {
+		const libraryMap = new Map();
 
-		items.forEach((item) => {
-			const normalizedPath = item.path.replace(/^\/+/, '');
+		rawFiles.forEach((item) => {
+			const rawPath = typeof item === 'string' ? item : item.path;
+			const parsed = parseCdnAssetPath(rawPath);
+			if (!parsed) return;
 
-			// Run the path through our regex to extract [fullMatch, type, libraryName, version, fileName]
-			const match = normalizedPath.match(CDN_PATH_REGEX);
-			if (!match) return;
+			const { type, library, version, fileName, relativePath } = parsed;
+			const key = `${type}:${library.toLowerCase()}`;
 
-			const type = match[1].toLowerCase();      // 'css' | 'js'
-			const libraryName = match[2];             // e.g. 'font-awesome', 'jquery'
-			const version = match[3];                 // e.g. '4.1', '4.7', '5.3'
-			const fileName = match[4];                // e.g. 'all.min.css'
-
-			const libKey = `${type}:${libraryName.toLowerCase()}`;
-
-			// If this is the first time we've seen this library, initialize its entry in `libMap`
-			if (!libMap.has(libKey)) {
-				libMap.set(libKey, {
-					id: libKey,
+			if (!libraryMap.has(key)) {
+				libraryMap.set(key, {
+					key,
 					type,
-					name: libraryName,
-					displayName: formatLibraryDisplayName(libraryName),
-					versionsMap: new Map() // Inner Map grouping files by version string
+					slug: library,
+					displayName: formatLibraryDisplayName(library),
+					versionsMap: new Map()
 				});
 			}
 
-			const lib = libMap.get(libKey);
-
-			// If this is the first file we've seen for this specific version, create an empty array
-			if (!lib.versionsMap.has(version)) {
-				lib.versionsMap.set(version, []);
+			const libEntry = libraryMap.get(key);
+			if (!libEntry.versionsMap.has(version)) {
+				libEntry.versionsMap.set(version, []);
 			}
 
-			// Add the file details into that version's array
-			lib.versionsMap.get(version).push({
-				fileName,
-				version,
-				relativePath: normalizedPath,
-				size: item.size || null,
-				lastModified: item.lastModified || null
+			// Look up predefined alt and figcaption metadata for image assets
+			const predefinedMeta =
+				type === 'img' ? findPredefinedImageMeta(relativePath, fileName) : null;
+
+			// Prevent duplicate file entries inside the same version
+			const existingFiles = libEntry.versionsMap.get(version);
+			if (!existingFiles.some((f) => f.relativePath === relativePath)) {
+				existingFiles.push({
+					fileName,
+					version,
+					relativePath,
+					size: item.size || null,
+					lastModified: item.lastModified || null,
+					predefinedAlt: predefinedMeta ? predefinedMeta.alt : '',
+					predefinedFigcaption: predefinedMeta ? predefinedMeta.figcaption : '',
+					hasPredefinedMatch: Boolean(predefinedMeta)
+				});
+			}
+		});
+
+		// Convert the Map into a sorted array of Library objects
+		const libraries = [];
+		libraryMap.forEach((lib) => {
+			// Sort versions descending using semantic version comparison (e.g. 5.3 > 4.1)
+			const sortedVersions = Array.from(lib.versionsMap.keys()).sort((a, b) =>
+				compareSemverDesc(a, b)
+			);
+
+			const versions = sortedVersions.map((ver) => {
+				const files = lib.versionsMap.get(ver).sort((a, b) => a.fileName.localeCompare(b.fileName));
+				return {
+					version: ver,
+					files
+				};
+			});
+
+			libraries.push({
+				key: lib.key,
+				type: lib.type,
+				slug: lib.slug,
+				displayName: lib.displayName,
+				latestVersion: sortedVersions[0] || '',
+				versions
 			});
 		});
 
-		// Convert our nested Maps into clean, sorted Arrays for rendering
-		const libraries = Array.from(libMap.values()).map((lib) => {
-			const versions = Array.from(lib.versionsMap.entries())
-				.map(([version, files]) => ({
-					version,
-					// Sort files alphabetically within each version (e.g. a.js before b.js)
-					files: files.sort((a, b) => a.fileName.localeCompare(b.fileName))
-				}))
-				// Sort versions from newest to oldest (e.g. 5.3 -> 4.7 -> 4.1)
-				.sort((a, b) => compareSemverDesc(a.version, b.version));
+		// Sort library cards alphabetically by their display name
+		libraries.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-			return {
-				id: lib.id,
-				type: lib.type,
-				name: lib.name,
-				displayName: lib.displayName,
-				versions,
-				selectedVersion: 'all' // Default the card's dropdown to show "All Versions"
-			};
-		});
-
-		// Finally, sort the library cards alphabetically by library name (e.g. Font Awesome, then jQuery)
-		return libraries.sort((a, b) => a.name.localeCompare(b.name));
+		state.libraries = libraries;
+		updateCategoryCounts();
+		renderAssetsGrid();
 	}
 
 	/**
-	 * Compares two version strings (like "4.1", "4.10", "5.3.1") in DESCENDING order
-	 * (newest version first).
+	 * Converts a folder slug (like `'font-awesome'` or `'logos'`) into a clean,
+	 * human-friendly card title (like `'Font Awesome'` or `'Logos'`).
 	 *
-	 * Why we can't just use standard string `.sort()`:
-	 * In alphabetical string sorting, `"4.10"` comes BEFORE `"4.2"` because character `'1'`
-	 * is smaller than `'2'`. By splitting the version string on `.` and `-` and converting
-	 * each part into a real `Number`, `10` is properly compared as greater than `2`!
-	 *
-	 * @param {string} vA - First version string.
-	 * @param {string} vB - Second version string.
-	 * @returns {number} Positive if vB > vA, negative if vA > vB, 0 if equal.
+	 * @param {string} slug - Folder name inside `/css/cdn/`, `/js/cdn/`, or `/img/cdn/`
+	 * @returns {string} Formatted display title
 	 */
-	function compareSemverDesc(vA, vB) {
-		// Split "5.3.1" into [5, 3, 1]
-		const partsA = String(vA).split(/[.-]/).map((n) => (isNaN(n) ? n : Number(n)));
-		const partsB = String(vB).split(/[.-]/).map((n) => (isNaN(n) ? n : Number(n)));
+	function formatLibraryDisplayName(slug) {
+		const knownNames = {
+			'jquery': 'jQuery',
+			'font-awesome': 'Font Awesome',
+			'bootstrap': 'Bootstrap',
+			'popper': 'Popper.js',
+			'lodash': 'Lodash',
+			'moment': 'Moment.js',
+			'axios': 'Axios',
+			'chartjs': 'Chart.js',
+			'datatables': 'DataTables',
+			'select2': 'Select2',
+			'logos': 'JHM Logos & Brand Marks',
+			'icons': 'Icons & UI Graphics',
+			'banners': 'Hero & Page Banners'
+		};
+
+		const lower = slug.toLowerCase();
+		if (knownNames[lower]) return knownNames[lower];
+
+		// Default: split on hyphens/underscores and capitalize each word
+		return slug
+			.split(/[-_]+/)
+			.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+			.join(' ');
+	}
+
+	/**
+	 * Compares two version strings in descending order (newest first).
+	 * Example: `'5.3'` comes before `'4.1'`.
+	 */
+	function compareSemverDesc(a, b) {
+		const partsA = String(a).replace(/^v/i, '').split(/[.-]/);
+		const partsB = String(b).replace(/^v/i, '').split(/[.-]/);
 		const len = Math.max(partsA.length, partsB.length);
 
 		for (let i = 0; i < len; i++) {
-			// Use `?? 0` so "5.3" is treated as "5.3.0" when compared against "5.3.1"
-			const a = partsA[i] ?? 0;
-			const b = partsB[i] ?? 0;
-			if (a !== b) {
-				// Return `b > a ? 1 : -1` for descending order (highest version first)
-				return b > a ? 1 : -1;
+			const numA = parseInt(partsA[i], 10);
+			const numB = parseInt(partsB[i], 10);
+
+			if (!isNaN(numA) && !isNaN(numB)) {
+				if (numA !== numB) return numB - numA;
+			} else {
+				const strA = partsA[i] || '';
+				const strB = partsB[i] || '';
+				if (strA !== strB) return strB.localeCompare(strA);
 			}
 		}
 		return 0;
 	}
 
-	/**
-	 * Converts a folder slug (e.g. `'font-awesome'` or `'jquery'`) into a nicely
-	 * capitalized title for the UI card header (e.g. `'Font Awesome'` or `'jQuery'`).
-	 *
-	 * @param {string} slug - Folder name from `/cdn/{slug}/`.
-	 * @returns {string} Human-friendly library title.
-	 */
-	function formatLibraryDisplayName(slug) {
-		// Dictionary of popular libraries with special capitalization
-		const knownNames = {
-			'jquery': 'jQuery',
-			'jquery-ui': 'jQuery UI',
-			'font-awesome': 'Font Awesome',
-			'fontawesome': 'Font Awesome',
-			'bootstrap': 'Bootstrap',
-			'tailwindcss': 'Tailwind CSS',
-			'select2': 'Select2',
-			'datatables': 'DataTables',
-			'chartjs': 'Chart.js',
-			'lodash': 'Lodash',
-			'moment': 'Moment.js',
-			'axios': 'Axios',
-			"d3": 'D3.js',
-		};
-		const lower = slug.toLowerCase();
-		if (knownNames[lower]) return knownNames[lower];
-
-		// For any other folder name, split by hyphens/underscores and capitalize each word:
-		// e.g., "my-custom-script" -> ["my", "custom", "script"] -> "My Custom Script"
-		return slug
-			.split(/[-_]+/)
-			.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-			.join(' ');
-	}
-
 	/* ==========================================================================
-	   4. UI Rendering Functions
+	   8. UI RENDERING & FILTERING
 	   ========================================================================== */
 
 	/**
-	 * Main render function.
-	 * Reads the current `state` (active category tab, search query, selected versions),
-	 * filters `state.libraries` accordingly, updates the counters, and injects the
-	 * generated HTML cards into the page.
+	 * Updates the badge counters on the "All Assets", "JavaScript", "Stylesheets",
+	 * and "Images" filter buttons in the hero toolbar.
 	 */
-	function render() {
-		updateCategoryCounts();
+	function updateCategoryCounts() {
+		let totalFiles = 0;
+		let jsFiles = 0;
+		let cssFiles = 0;
+		let imgFiles = 0;
 
-		const query = state.searchQuery;
+		state.libraries.forEach((lib) => {
+			lib.versions.forEach((verObj) => {
+				const count = verObj.files.length;
+				totalFiles += count;
+				if (lib.type === 'js') jsFiles += count;
+				if (lib.type === 'css') cssFiles += count;
+				if (lib.type === 'img') imgFiles += count;
+			});
+		});
+
+		dom.countAll.textContent = totalFiles;
+		dom.countJs.textContent = jsFiles;
+		dom.countCss.textContent = cssFiles;
+		if (dom.countImg) dom.countImg.textContent = imgFiles;
+	}
+
+	/**
+	 * Filters `state.libraries` based on the active category tab and search query,
+	 * then builds and injects the HTML cards into `#assetsGrid`.
+	 */
+	function renderAssetsGrid() {
+		const query = state.searchQuery.trim().toLowerCase();
+		const category = state.filterCategory;
+
 		const filteredLibraries = [];
 
-		// Loop through every library and keep only the ones that match the active filter & search query
 		state.libraries.forEach((lib) => {
-			// 1. Check Category Tab filter ('all', 'js', or 'css')
-			if (state.activeFilter !== 'all' && lib.type !== state.activeFilter) {
-				return;
-			}
+			// 1. Filter by Category Tab ('all', 'js', 'css', or 'img')
+			if (category !== 'all' && lib.type !== category) return;
 
-			// 2. Check Versions and Files inside this library
+			// 2. Check which version is selected for this library card ('all' by default)
+			const selectedVer = state.selectedVersions[lib.key] || 'all';
+
+			// 3. Filter versions & files by the search query (supports multi-word searches like "jquery 5.3")
 			const matchingVersions = [];
-			lib.versions.forEach((verObj) => {
-				// If the user picked a specific version in this card's dropdown (e.g. "v4.7")
-				// AND isn't typing a global search query, hide other versions on this card.
-				if (!query && lib.selectedVersion !== 'all' && verObj.version !== lib.selectedVersion) {
-					return;
-				}
 
-				// Filter files inside this version by the user's search query
+			lib.versions.forEach((verObj) => {
+				if (selectedVer !== 'all' && verObj.version !== selectedVer) return;
+
 				const matchingFiles = verObj.files.filter((file) => {
 					if (!query) return true;
-
-					// Combine all searchable text for this file into a single lowercase string ("haystack")
-					const haystack = `${lib.name} ${lib.displayName} ${lib.type} ${verObj.version} ${file.fileName} ${file.relativePath}`.toLowerCase();
-
-					// Split the user's search query by spaces so multi-word searches like "jquery 4.7"
-					// require EVERY word ("jquery" AND "4.7") to appear somewhere in the haystack.
-					return query.split(/\s+/).every((term) => haystack.includes(term));
+					const haystack = `${lib.displayName} ${lib.slug} ${lib.type} ${verObj.version} ${file.fileName} ${file.relativePath} ${file.predefinedAlt} ${file.predefinedFigcaption}`.toLowerCase();
+					const tokens = query.split(/\s+/);
+					return tokens.every((token) => haystack.includes(token));
 				});
 
 				if (matchingFiles.length > 0) {
@@ -730,7 +756,6 @@
 				}
 			});
 
-			// If this library has at least one matching file, include it in the rendered results
 			if (matchingVersions.length > 0) {
 				filteredLibraries.push({
 					...lib,
@@ -739,264 +764,431 @@
 			}
 		});
 
-		// Count total visible files across all filtered libraries for the summary bar
-		const totalMatchingFiles = filteredLibraries.reduce(
-			(sum, lib) => sum + lib.matchingVersions.reduce((vSum, v) => vSum + v.files.length, 0),
-			0
-		);
-		els.resultsSummaryText.innerHTML = `Showing <strong>${filteredLibraries.length}</strong> ${filteredLibraries.length === 1 ? 'library' : 'libraries'} (<strong>${totalMatchingFiles}</strong> ${totalMatchingFiles === 1 ? 'file' : 'files'})`;
-
-		// If nothing matched, show the Empty State panel instead of the cards grid
+		// Toggle Empty State if no results match
 		if (filteredLibraries.length === 0) {
-			els.librariesGrid.innerHTML = '';
-			els.emptyState.hidden = false;
-
-			if (state.libraries.length === 0) {
-				if (window.location.protocol === 'file:' && state.sourceMode === 'local') {
-					els.emptyStateTitle.textContent = 'Local folder scanning requires VS Code Live Server';
-					els.emptyStateDesc.innerHTML = 'Browsers block local folder discovery over the <code>file://</code> protocol. Please open this project using the VS Code <strong>Live Server</strong> extension (<code>http://127.0.0.1:5500</code>) to scan local <code>/cdn/</code> folders.';
-				} else {
-					els.emptyStateTitle.textContent = 'No CDN assets found in repository yet';
-					els.emptyStateDesc.innerHTML = 'Upload your folders to <code>/css/cdn/{library}/{version}/</code> and <code>/js/cdn/{library}/{version}/</code> in your <strong>global-assets</strong> Azure Blob container (or run via VS Code <strong>Live Server</strong> locally), then click <strong>Sync</strong>.';
-				}
-				els.resetFiltersBtn.hidden = true;
-			} else {
-				els.emptyStateTitle.textContent = 'No matching assets found';
-				els.emptyStateDesc.innerHTML = 'Try adjusting your search query or category filter.';
-				els.resetFiltersBtn.hidden = false;
-			}
+			dom.assetsGrid.innerHTML = '';
+			dom.emptyState.classList.remove('hidden');
 			return;
 		}
 
-		// Render all matching library cards into the grid and attach their button listeners
-		els.emptyState.hidden = true;
-		els.librariesGrid.innerHTML = filteredLibraries.map(renderLibraryCard).join('');
-		bindCardEvents();
+		dom.emptyState.classList.add('hidden');
+		dom.assetsGrid.innerHTML = filteredLibraries.map((lib) => buildLibraryCardHtml(lib)).join('');
 	}
 
 	/**
-	 * Generates the HTML string for a single Library Card (header + version selector + file rows).
-	 *
-	 * @param {Object} lib - Filtered library object from `render()`.
-	 * @returns {string} HTML markup for the `<article class="library-card">`.
+	 * Generates the HTML string for a single Library Card (header, version selector,
+	 * and list of file rows with action buttons).
 	 */
-	function renderLibraryCard(lib) {
-		const isJs = lib.type === 'js';
-		const badgeLabel = isJs ? 'JavaScript' : 'Stylesheet';
-		const badgeClass = isJs ? 'type-js' : 'type-css';
-		const folderPrefix = `/${lib.type}/cdn/${lib.name}/`;
+	function buildLibraryCardHtml(lib) {
+		const selectedVer = state.selectedVersions[lib.key] || 'all';
+		const typeLabel = lib.type === 'js' ? 'JS' : lib.type === 'css' ? 'CSS' : 'IMG';
+		const typeClass = lib.type === 'js' ? 'type-js' : lib.type === 'css' ? 'type-css' : 'type-img';
 
-		// Build the `<option>` tags for the card's Version dropdown.
-		// Since `lib.versions` is already sorted newest-first, index `0` is marked `(Latest)`.
-		const versionOptions = [
-			`<option value="all" ${lib.selectedVersion === 'all' ? 'selected' : ''}>All Versions (${lib.versions.length})</option>`,
-			...lib.versions.map((v, idx) => {
-				const latestSuffix = idx === 0 ? ' (Latest)' : '';
-				const selected = lib.selectedVersion === v.version ? 'selected' : '';
-				return `<option value="${escapeHtml(v.version)}" ${selected}>v${escapeHtml(v.version)}${latestSuffix}</option>`;
+		// Hide version dropdown if an image folder only uses the flat 'latest' structure
+		const hasMultipleOrNamedVersions =
+			lib.versions.length > 1 ||
+			(lib.versions.length === 1 && lib.versions[0].version !== 'latest');
+
+		// Build options for the card's Version dropdown
+		const versionOptionsHtml = [
+			`<option value="all" ${selectedVer === 'all' ? 'selected' : ''}>All Versions (${lib.versions.length})</option>`,
+			...lib.versions.map((v) => {
+				const isLatest = v.version === lib.latestVersion && lib.versions.length > 1;
+				const label = `v${v.version}${isLatest ? ' (Latest)' : ''}`;
+				return `<option value="${escapeAttr(v.version)}" ${selectedVer === v.version ? 'selected' : ''}>${escapeHtml(label)}</option>`;
 			})
 		].join('');
 
-		// Render each file row inside the card
+		// Build each file row inside the card
 		const rowsHtml = lib.matchingVersions
-			.map((verObj) => verObj.files.map((file) => renderFileRow(lib, file)).join(''))
+			.map((verObj) =>
+				verObj.files
+					.map((file) => {
+						const fullUrl = buildFullAssetUrl(file.relativePath);
+						const sizeBadge = file.size ? ` &bull; ${formatBytes(file.size)}` : '';
+						const isImage = lib.type === 'img';
+
+						// Version badge (for flat images where version === 'latest', show 'CDN IMAGE')
+						const versionPillLabel =
+							isImage && verObj.version === 'latest'
+								? 'IMAGE'
+								: `v${verObj.version}`;
+
+						// Thumbnail preview for image rows
+						const thumbnailHtml = isImage
+							? `<div class="file-thumb-box" aria-hidden="true">
+									<img src="${escapeAttr(fullUrl)}" alt="" class="file-thumb-img" loading="lazy">
+							   </div>`
+							: '';
+
+						// Display predefined alt summary on image rows so users see the approved metadata immediately
+						const predefinedMetaSummaryHtml = isImage
+							? file.hasPredefinedMatch
+								? `<span class="file-meta-sub">Predefined <code>alt</code>: &ldquo;${escapeHtml(file.predefinedAlt)}&rdquo;</span>`
+								: `<span class="file-meta-sub" style="color: #fbbf24;">Note: Add this image to the <code>images[]</code> array in <code>js/site.js</code></span>`
+							: '';
+
+						// Primary HTML tag action button:
+						// - For JS/CSS: immediate "Copy <script>" or "Copy <link>"
+						// - For Images: "Generate Tag" button that opens the modal pre-populated with `images[]` metadata
+						let primaryTagActionButtonHtml = '';
+						if (isImage) {
+							primaryTagActionButtonHtml = `
+								<button
+									type="button"
+									class="btn-action btn-generate-tag"
+									data-open-img-modal="true"
+									data-img-url="${escapeAttr(fullUrl)}"
+									data-img-name="${escapeAttr(file.fileName)}"
+									data-img-alt="${escapeAttr(file.predefinedAlt)}"
+									data-img-figcaption="${escapeAttr(file.predefinedFigcaption)}"
+									data-img-has-meta="${file.hasPredefinedMatch ? 'true' : 'false'}"
+									title="Open modal to generate <img> or <figure> HTML tag with predefined metadata"
+								>
+									<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+										<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+										<circle cx="8.5" cy="8.5" r="1.5"></circle>
+										<polyline points="21 15 16 10 5 21"></polyline>
+									</svg>
+									Generate Tag
+								</button>`;
+						} else {
+							const htmlSnippet = buildHtmlSnippet(lib.type, fullUrl);
+							const snippetBtnLabel = lib.type === 'js' ? 'Copy <script>' : 'Copy <link>';
+							primaryTagActionButtonHtml = `
+								<button
+									type="button"
+									class="btn-action"
+									data-copy="${escapeAttr(htmlSnippet)}"
+									data-label="HTML Tag"
+									title="Copy ready-to-use HTML tag"
+								>
+									<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+										<polyline points="16 18 22 12 16 6"></polyline>
+										<polyline points="8 6 2 12 8 18"></polyline>
+									</svg>
+									${escapeHtml(snippetBtnLabel)}
+								</button>`;
+						}
+
+						return `
+						<div class="file-row">
+							<div class="file-info">
+								${thumbnailHtml}
+								<span class="version-pill">${escapeHtml(versionPillLabel)}</span>
+								<div class="file-path-box">
+									<span class="file-name">${escapeHtml(file.fileName)}</span>
+									<span class="file-url">${escapeHtml(fullUrl)}${sizeBadge}</span>
+									${predefinedMetaSummaryHtml}
+								</div>
+							</div>
+							<div class="file-actions">
+								<button
+									type="button"
+									class="btn-action"
+									data-copy="${escapeAttr(fullUrl)}"
+									data-label="URL"
+									title="Copy direct CDN URL"
+								>
+									<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+										<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+										<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+									</svg>
+									Copy URL
+								</button>
+								${primaryTagActionButtonHtml}
+								<a
+									href="${escapeAttr(fullUrl)}"
+									target="_blank"
+									rel="noopener"
+									class="btn-action"
+									aria-label="Open raw file ${escapeAttr(file.fileName)} in a new tab"
+									title="Open raw file in new tab"
+								>
+									<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+										<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+										<polyline points="15 3 21 3 21 9"></polyline>
+										<line x1="10" y1="14" x2="21" y2="3"></line>
+									</svg>
+								</a>
+							</div>
+						</div>`;
+					})
+					.join('')
+			)
 			.join('');
 
-		// Create a valid HTML ID slug (no colons) for pairing <label for="..."> with <select id="...">
-		const safeDomId = lib.id.replace(/[^a-zA-Z0-9_-]/g, '-');
+		const folderSubtitle =
+			lib.type === 'img' && lib.slug === 'general'
+				? '/img/cdn/'
+				: `/${lib.type}/cdn/${lib.slug}/`;
+
+		const versionControlsHtml = hasMultipleOrNamedVersions
+			? `<div class="card-controls">
+					<label class="version-label" for="ver-${escapeAttr(lib.key)}">Version:</label>
+					<select
+						id="ver-${escapeAttr(lib.key)}"
+						class="version-select"
+						data-lib-key="${escapeAttr(lib.key)}"
+					>
+						${versionOptionsHtml}
+					</select>
+			   </div>`
+			: '';
 
 		return `
-			<article class="library-card" data-lib-id="${escapeHtml(lib.id)}" aria-labelledby="title-${escapeHtml(safeDomId)}">
-				<div class="card-header">
-					<div class="card-title-group">
-						<span class="category-badge ${badgeClass}">${badgeLabel}</span>
-						<h3 class="library-name" id="title-${escapeHtml(safeDomId)}">${escapeHtml(lib.displayName)}</h3>
-						<code class="library-path-chip">${escapeHtml(folderPrefix)}</code>
-					</div>
-					<div class="version-controls">
-						<label class="version-label" for="ver-${escapeHtml(safeDomId)}">Version:</label>
-						<select
-							id="ver-${escapeHtml(safeDomId)}"
-							class="version-select"
-							data-lib-id="${escapeHtml(lib.id)}"
-							aria-label="Filter ${escapeHtml(lib.displayName)} (${badgeLabel}) by version"
-						>
-							${versionOptions}
-						</select>
-					</div>
+		<article class="library-card" data-lib-key="${escapeAttr(lib.key)}">
+			<div class="card-header">
+				<div class="library-title-group">
+					<span class="type-badge ${typeClass}">${typeLabel}</span>
+					<h3 class="library-name">${escapeHtml(lib.displayName)}</h3>
+					<span class="library-folder">${escapeHtml(folderSubtitle)}</span>
 				</div>
-				<div class="file-list" role="list" aria-label="${escapeHtml(lib.displayName)} files">
-					${rowsHtml}
-				</div>
-			</article>
-		`;
-	}
-
-	/**
-	 * Generates the HTML string for an individual file row inside a Library Card,
-	 * including its version tag, filename, full CDN URL preview, and Copy buttons.
-	 *
-	 * @param {Object} lib  - The parent library object ('js' or 'css').
-	 * @param {Object} file - The file metadata object (`fileName`, `version`, `relativePath`, etc.).
-	 * @returns {string} HTML markup for `<div class="file-row">`.
-	 */
-	function renderFileRow(lib, file) {
-		const fullUrl = buildFullAssetUrl(file.relativePath);
-		const htmlSnippet = buildHtmlTagSnippet(lib.type, fullUrl);
-		const tagButtonLabel = lib.type === 'js' ? 'Copy &lt;script&gt;' : 'Copy &lt;link&gt;';
-
-		// Optional metadata (file size in KB/MB and last modified date when loaded from Azure XML)
-		const metaParts = [];
-		if (file.size) metaParts.push(formatBytes(file.size));
-		if (file.lastModified) metaParts.push(`Updated ${formatShortDate(file.lastModified)}`);
-		const metaHtml = metaParts.length > 0 ? `<span class="file-meta">&bull; ${escapeHtml(metaParts.join(' • '))}</span>` : '';
-
-		const tagKind = lib.type === 'js' ? 'script tag' : 'stylesheet link tag';
-		const contextDesc = `${lib.displayName} v${file.version} (${file.fileName})`;
-
-		// Note: We store the exact string to copy inside `data-copy-text="..."` attributes
-		// on the buttons so `bindCardEvents()` can read it when clicked.
-		return `
-			<div class="file-row" role="listitem">
-				<div class="file-info">
-					<div class="file-primary">
-						<span class="version-tag">v${escapeHtml(file.version)}</span>
-						<span class="file-name">${escapeHtml(file.fileName)}</span>
-						${metaHtml}
-					</div>
-					<code class="file-url-preview">${escapeHtml(fullUrl)}</code>
-				</div>
-				<div class="file-actions">
-					<button
-						type="button"
-						class="btn-copy btn-copy-primary"
-						data-copy-text="${escapeHtml(fullUrl)}"
-						data-copy-label="CDN URL for ${escapeHtml(contextDesc)}"
-						aria-label="Copy CDN URL for ${escapeHtml(contextDesc)}"
-						title="Copy direct CDN URL to clipboard"
-					>
-						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-							<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-						</svg>
-						<span>Copy URL</span>
-					</button>
-					<button
-						type="button"
-						class="btn-copy"
-						data-copy-text="${escapeHtml(htmlSnippet)}"
-						data-copy-label="HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
-						aria-label="Copy HTML ${escapeHtml(tagKind)} for ${escapeHtml(contextDesc)}"
-						title="Copy HTML snippet to clipboard"
-					>
-						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<polyline points="16 18 22 12 16 6"></polyline>
-							<polyline points="8 6 2 12 8 18"></polyline>
-						</svg>
-						<span>${tagButtonLabel}</span>
-					</button>
-					<a
-						href="${escapeHtml(fullUrl)}"
-						target="_blank"
-						rel="noopener"
-						class="btn-open-raw"
-						title="Open raw file in new tab"
-						aria-label="Open raw file ${escapeHtml(contextDesc)} in a new tab"
-					>
-						<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-							<polyline points="15 3 21 3 21 9"></polyline>
-							<line x1="10" y1="14" x2="21" y2="3"></line>
-						</svg>
-					</a>
-				</div>
+				${versionControlsHtml}
 			</div>
-		`;
-	}
-
-	/**
-	 * Attaches event listeners to dynamically rendered elements inside the Library Cards
-	 * (specifically the per-card Version `<select>` dropdowns and the Copy buttons).
-	 * Must be called at the end of `render()` whenever `librariesGrid.innerHTML` is updated.
-	 */
-	function bindCardEvents() {
-		// 1. Per-card Version Selector Dropdowns
-		document.querySelectorAll('.version-select').forEach((select) => {
-			select.addEventListener('change', (e) => {
-				const libId = e.target.dataset.libId;
-				const targetLib = state.libraries.find((l) => l.id === libId);
-				if (targetLib) {
-					targetLib.selectedVersion = e.target.value;
-					render();
-				}
-			});
-		});
-
-		// 2. Copy Action Buttons ("Copy URL" and "Copy <script>/<link>")
-		document.querySelectorAll('.btn-copy').forEach((btn) => {
-			btn.addEventListener('click', async () => {
-				const textToCopy = btn.dataset.copyText;
-				const label = btn.dataset.copyLabel || 'Text';
-				await copyToClipboard(textToCopy, btn, label);
-			});
-		});
+			<div class="file-list">
+				${rowsHtml}
+			</div>
+		</article>`;
 	}
 
 	/* ==========================================================================
-	   5. Helper & Utility Functions
+	   9. IMAGE TAG GENERATOR MODAL LOGIC (PREDEFINED METADATA ARRAY EDITION)
 	   ========================================================================== */
 
 	/**
-	 * Combines the configured Base CDN URL (`state.baseUrl`) with a file's relative path
-	 * to produce a complete HTTPS URL.
+	 * Opens the "Generate Image HTML Tag" modal for a selected CDN image asset,
+	 * automatically pre-populating the `alt` and `figcaption` inputs from the
+	 * `images` array.
 	 *
-	 * Example:
-	 *   base:         "https://jhmcdn.blob.core.windows.net/global-assets"
-	 *   relativePath: "js/cdn/jquery/4.7/jquery.min.js"
-	 *   returns:      "https://jhmcdn.blob.core.windows.net/global-assets/js/cdn/jquery/4.7/jquery.min.js"
+	 * @param {object} params
+	 * @param {string} params.fileUrl           - Full CDN URL to the image
+	 * @param {string} params.fileName          - File name (e.g. `jhm-logo.png`)
+	 * @param {string} params.predefinedAlt     - Predefined `alt` text from `images[]`
+	 * @param {string} params.predefinedCaption - Predefined `figcaption` text from `images[]`
+	 * @param {boolean} params.hasPredefined    - Whether the image was found in `images[]`
+	 * @param {HTMLElement} params.triggerEl    - Button element that triggered the modal
+	 */
+	function openImageTagModal({
+		fileUrl,
+		fileName,
+		predefinedAlt,
+		predefinedCaption,
+		hasPredefined,
+		triggerEl
+	}) {
+		if (!dom.imgTagModalBackdrop) return;
+
+		state.modal.isOpen = true;
+		state.modal.mode = 'img';
+		state.modal.fileUrl = fileUrl;
+		state.modal.fileName = fileName;
+		state.modal.predefinedAlt = predefinedAlt || '';
+		state.modal.predefinedFigcaption = predefinedCaption || '';
+		state.modal.hasPredefinedMatch = Boolean(hasPredefined);
+		state.modal.isUnlockedForCustomEdit = !hasPredefined;
+		state.modal.lastFocusedElement = triggerEl || document.activeElement;
+
+		// Populate image preview bar
+		dom.modalImgPreview.src = fileUrl;
+		dom.modalImgPreview.alt = `Preview of ${fileName}`;
+		dom.modalImgName.textContent = fileName;
+		dom.modalImgUrl.textContent = fileUrl;
+
+		// Update predefined status badge
+		if (dom.modalPredefinedBadge) {
+			if (hasPredefined) {
+				dom.modalPredefinedBadge.textContent = 'Predefined Metadata Loaded';
+				dom.modalPredefinedBadge.className = 'predefined-badge predefined-badge-ok';
+			} else {
+				dom.modalPredefinedBadge.textContent = 'Not Found in images[] Array';
+				dom.modalPredefinedBadge.className = 'predefined-badge predefined-badge-warn';
+			}
+		}
+
+		// Pre-populate inputs with predefined values from the `images` array
+		dom.modalAltInput.value = state.modal.predefinedAlt;
+		dom.modalCaptionInput.value = state.modal.predefinedFigcaption;
+
+		// Apply read-only lock state (locked by default when predefined metadata exists)
+		syncModalReadonlyLockUI();
+
+		// Set initial mode to "<img> tag only" and render the pre-populated HTML tag preview
+		setModalTagMode('img');
+
+		// Show modal
+		dom.imgTagModalBackdrop.classList.remove('hidden');
+		dom.imgTagModalBackdrop.setAttribute('aria-hidden', 'false');
+
+		// Focus the primary format toggle button or Copy button for quick keyboard use
+		setTimeout(() => {
+			if (dom.modeImgOnlyBtn) dom.modeImgOnlyBtn.focus();
+		}, 20);
+	}
+
+	/**
+	 * Synchronizes the read-only vs. unlocked state of the Alt and Figcaption inputs.
+	 */
+	function syncModalReadonlyLockUI() {
+		const isUnlocked = state.modal.isUnlockedForCustomEdit;
+
+		if (dom.modalAltInput) {
+			dom.modalAltInput.readOnly = !isUnlocked;
+			dom.modalAltInput.classList.toggle('is-readonly', !isUnlocked);
+		}
+		if (dom.modalCaptionInput) {
+			dom.modalCaptionInput.readOnly = !isUnlocked;
+			dom.modalCaptionInput.classList.toggle('is-readonly', !isUnlocked);
+		}
+
+		if (dom.toggleEditPredefinedBtn) {
+			dom.toggleEditPredefinedBtn.setAttribute('aria-pressed', isUnlocked ? 'true' : 'false');
+			dom.toggleEditPredefinedBtn.classList.toggle('unlocked', isUnlocked);
+			dom.toggleEditPredefinedBtn.textContent = isUnlocked
+				? 'Reset to Predefined'
+				: 'Unlock to Customize';
+		}
+
+		if (dom.modalLockStatusText) {
+			if (!state.modal.hasPredefinedMatch) {
+				dom.modalLockStatusText.innerHTML =
+					'No entry in <code>images[]</code> array &mdash; custom input enabled';
+			} else if (isUnlocked) {
+				dom.modalLockStatusText.innerHTML =
+					'Custom override active (click <strong>Reset to Predefined</strong> to restore)';
+			} else {
+				dom.modalLockStatusText.innerHTML =
+					'Using predefined values from <code>images[]</code> array';
+			}
+		}
+	}
+
+	/**
+	 * Toggles between locked predefined metadata (`images[]`) and custom editing.
+	 * When locking back ("Reset to Predefined"), restores the official predefined
+	 * `alt` and `figcaption` strings from `images[]`.
+	 */
+	function toggleModalPredefinedLock() {
+		state.modal.isUnlockedForCustomEdit = !state.modal.isUnlockedForCustomEdit;
+
+		if (!state.modal.isUnlockedForCustomEdit) {
+			// Restore official predefined values from `images[]`
+			dom.modalAltInput.value = state.modal.predefinedAlt;
+			dom.modalCaptionInput.value = state.modal.predefinedFigcaption;
+		} else {
+			dom.modalAltInput.focus();
+		}
+
+		syncModalReadonlyLockUI();
+		updateModalLivePreview();
+	}
+
+	/**
+	 * Closes the "Generate Image HTML Tag" modal and restores keyboard focus
+	 * to the button that opened it.
+	 */
+	function closeImageTagModal() {
+		if (!dom.imgTagModalBackdrop || !state.modal.isOpen) return;
+
+		state.modal.isOpen = false;
+		dom.imgTagModalBackdrop.classList.add('hidden');
+		dom.imgTagModalBackdrop.setAttribute('aria-hidden', 'true');
+
+		if (state.modal.lastFocusedElement && typeof state.modal.lastFocusedElement.focus === 'function') {
+			state.modal.lastFocusedElement.focus();
+		}
+	}
+
+	/**
+	 * Switches the modal between:
+	 *   - `'img'`: `<img>` tag only
+	 *   - `'figure'`: `<img>` with `<figure>` and `<figcaption>`
 	 *
-	 * @param {string} relativePath - Path starting with `css/cdn/...` or `js/cdn/...`.
-	 * @returns {string} Complete URL to the asset.
+	 * @param {'img' | 'figure'} mode
+	 */
+	function setModalTagMode(mode) {
+		state.modal.mode = mode === 'figure' ? 'figure' : 'img';
+		const isFigure = state.modal.mode === 'figure';
+
+		// Update toggle button states
+		if (dom.modeImgOnlyBtn && dom.modeFigureBtn) {
+			dom.modeImgOnlyBtn.classList.toggle('active', !isFigure);
+			dom.modeImgOnlyBtn.setAttribute('aria-pressed', !isFigure ? 'true' : 'false');
+
+			dom.modeFigureBtn.classList.toggle('active', isFigure);
+			dom.modeFigureBtn.setAttribute('aria-pressed', isFigure ? 'true' : 'false');
+		}
+
+		// Show or hide the <figcaption> input field
+		if (dom.modalCaptionGroup) {
+			dom.modalCaptionGroup.classList.toggle('hidden', !isFigure);
+		}
+
+		updateModalLivePreview();
+	}
+
+	/**
+	 * Builds the live HTML snippet for the modal based on the current mode,
+	 * `alt` text input, and `figcaption` text input.
+	 *
+	 * @returns {string} Ready-to-copy HTML snippet
+	 */
+	function buildModalImageHtmlSnippet() {
+		const url = state.modal.fileUrl;
+		const altText = dom.modalAltInput ? dom.modalAltInput.value : '';
+		const captionText = dom.modalCaptionInput ? dom.modalCaptionInput.value : '';
+
+		const imgTag = `<img src="${escapeAttr(url)}" alt="${escapeAttr(altText)}" loading="lazy">`;
+
+		if (state.modal.mode === 'figure') {
+			return `<figure>\n  ${imgTag}\n  <figcaption>${escapeHtml(captionText)}</figcaption>\n</figure>`;
+		}
+
+		return imgTag;
+	}
+
+	/**
+	 * Updates the `<code id="modalCodeOutput">` preview box in real time.
+	 */
+	function updateModalLivePreview() {
+		if (!dom.modalCodeOutput) return;
+		dom.modalCodeOutput.textContent = buildModalImageHtmlSnippet();
+	}
+
+	/* ==========================================================================
+	   10. URL & HTML SNIPPET HELPERS
+	   ========================================================================== */
+
+	/**
+	 * Combines the current `state.baseUrl` with a file's relative path to form
+	 * a complete URL.
 	 */
 	function buildFullAssetUrl(relativePath) {
-		// `.replace(/\/+$/, '')` removes any trailing slashes from the base URL
-		const base = (state.baseUrl || DEFAULT_AZURE_CONTAINER_URL).replace(/\/+$/, '');
-		// `.replace(/^\/+/, '')` removes any leading slashes from the relative path
-		const cleanRel = relativePath.replace(/^\/+/, '');
-		return `${base}/${cleanRel}`;
+		const cleanBase = (state.baseUrl || DEFAULT_AZURE_CONTAINER_URL).replace(/\/+$/, '');
+		const cleanRel = String(relativePath).replace(/^\/+/, '');
+		return `${cleanBase}/${cleanRel}`;
 	}
 
 	/**
-	 * Builds a ready-to-paste HTML `<link>` or `<script>` tag for a given asset URL.
-	 *
-	 * @param {'css'|'js'} type - Asset category type.
-	 * @param {string} fullUrl  - Complete URL to the asset.
-	 * @returns {string} HTML tag snippet.
+	 * Wraps a full asset URL in the appropriate HTML tag (`<script>` or `<link>`).
 	 */
-	function buildHtmlTagSnippet(type, fullUrl) {
-		if (type === 'css') {
-			return `<link rel="stylesheet" href="${fullUrl}">`;
+	function buildHtmlSnippet(type, fullUrl) {
+		if (type === 'js') {
+			return `<script src="${fullUrl}"></script>`;
 		}
-		return `<script src="${fullUrl}"></script>`;
+		return `<link rel="stylesheet" href="${fullUrl}">`;
 	}
 
 	/**
-	 * Copies a string of text to the user's system clipboard, temporarily changes
-	 * the clicked button's text to "Copied!" (with a green highlight), and displays
-	 * a toast notification in the bottom-right corner.
-	 *
-	 * @param {string} text            - The exact string to copy to the clipboard.
-	 * @param {HTMLElement} buttonEl   - The button element that was clicked.
-	 * @param {string} label           - Short description of what was copied (e.g. 'CDN URL').
+	 * Copies text to the user's clipboard, temporarily turns the clicked button
+	 * green ("Copied!"), and shows a toast notification at the bottom right.
 	 */
-	async function copyToClipboard(text, buttonEl, label) {
+	async function copyToClipboard(text, label, buttonEl) {
 		try {
-			// Modern asynchronous Clipboard API (supported in all modern browsers over HTTPS or localhost)
 			if (navigator.clipboard && navigator.clipboard.writeText) {
 				await navigator.clipboard.writeText(text);
 			} else {
-				// Legacy fallback for older browsers or non-secure contexts (e.g. file:// protocol):
-				// Creates an invisible <textarea>, selects the text inside it, and runs `execCommand('copy')`.
+				// Fallback for older browsers
 				const textarea = document.createElement('textarea');
 				textarea.value = text;
 				textarea.style.position = 'fixed';
@@ -1007,113 +1199,60 @@
 				document.body.removeChild(textarea);
 			}
 
-			// Temporarily change button appearance to green "Copied!" state
-			const spanEl = buttonEl.querySelector('span');
-			const originalLabel = spanEl ? spanEl.innerHTML : '';
-			buttonEl.classList.add('copied');
-			if (spanEl) spanEl.textContent = 'Copied!';
+			if (buttonEl) {
+				const originalHtml = buttonEl.innerHTML;
+				buttonEl.classList.add('copied');
+				buttonEl.innerHTML = `
+					<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none">
+						<polyline points="20 6 9 17 4 12"></polyline>
+					</svg>
+					Copied!`;
+				setTimeout(() => {
+					buttonEl.classList.remove('copied');
+					buttonEl.innerHTML = originalHtml;
+				}, 1400);
+			}
 
-			showToast(`Copied ${label} to clipboard`);
-
-			// Restore the original button label after 1.6 seconds
-			setTimeout(() => {
-				buttonEl.classList.remove('copied');
-				if (spanEl) spanEl.innerHTML = originalLabel;
-			}, 1600);
+			showToast(`${label} copied to clipboard!`);
 		} catch (err) {
-			console.error('Copy failed:', err);
 			showToast('Unable to copy automatically. Please copy manually.');
 		}
 	}
 
-	/**
-	 * Calculates the total number of JavaScript and CSS files currently loaded in
-	 * `state.libraries` and updates the badge numbers inside the category filter tabs.
-	 */
-	function updateCategoryCounts() {
-		let jsCount = 0;
-		let cssCount = 0;
+	/* ==========================================================================
+	   11. UI STATUS, TOAST & ESCAPING UTILITIES
+	   ========================================================================== */
 
-		state.libraries.forEach((lib) => {
-			// Sum up the number of files across all versions of this library
-			const fileCount = lib.versions.reduce((sum, v) => sum + v.files.length, 0);
-			if (lib.type === 'js') jsCount += fileCount;
-			if (lib.type === 'css') cssCount += fileCount;
-		});
-
-		els.countAll.textContent = jsCount + cssCount;
-		els.countJs.textContent = jsCount;
-		els.countCss.textContent = cssCount;
-	}
-
-	/**
-	 * Counts the total number of individual files across an array of library objects.
-	 *
-	 * @param {Array<Object>} libraries - Array of grouped library objects.
-	 * @returns {number} Total file count.
-	 */
-	function countTotalFiles(libraries) {
-		return libraries.reduce(
-			(sum, lib) => sum + lib.versions.reduce((vSum, v) => vSum + v.files.length, 0),
-			0
-		);
-	}
-
-	/**
-	 * Shows or hides the loading spinner panel while asset discovery is in progress.
-	 *
-	 * @param {boolean} isLoading - True to show the spinner, false to hide it.
-	 */
 	function setLoading(isLoading) {
-		els.loadingState.hidden = !isLoading;
 		if (isLoading) {
-			els.librariesGrid.innerHTML = '';
-			els.emptyState.hidden = true;
+			dom.loadingState.classList.remove('hidden');
+			dom.assetsGrid.classList.add('hidden');
+			dom.emptyState.classList.add('hidden');
+		} else {
+			dom.loadingState.classList.add('hidden');
+			dom.assetsGrid.classList.remove('hidden');
 		}
 	}
 
-	/**
-	 * Updates the status pill in the top header bar to show whether assets are
-	 * currently loaded from Azure Live XML (green dot) or Local Dev Server (blue dot).
-	 *
-	 * @param {'online'|'local'|'connecting'} mode - Visual state of the status indicator dot.
-	 * @param {string} text                        - Status label text to display.
-	 */
-	function updateStatus(mode, text) {
-		els.sourceStatusDot.className = 'status-dot';
-		if (mode === 'online') els.sourceStatusDot.classList.add('online');
-		if (mode === 'local') els.sourceStatusDot.classList.add('local');
-		els.sourceStatusText.textContent = text;
+	function setDiscoveryStatus(text, isOnline) {
+		dom.statusText.textContent = text;
+		if (isOnline) {
+			dom.statusDot.classList.add('online');
+		} else {
+			dom.statusDot.classList.remove('online');
+		}
 	}
 
-	/**
-	 * Creates and displays a temporary pop-up toast notification in the bottom-right
-	 * corner of the screen, then automatically removes it after 2.6 seconds.
-	 *
-	 * @param {string} message - Notification text to display.
-	 */
+	let toastTimer = null;
 	function showToast(message) {
-		const toast = document.createElement('div');
-		toast.className = 'toast';
-		toast.innerHTML = `
-			<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="16" height="16" stroke="#F2A900" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-				<polyline points="20 6 9 17 4 12"></polyline>
-			</svg>
-			<span>${escapeHtml(message)}</span>
-		`;
-		els.toastContainer.appendChild(toast);
-		setTimeout(() => {
-			toast.remove();
-		}, 2600);
+		dom.toast.textContent = message;
+		dom.toast.classList.add('show');
+		clearTimeout(toastTimer);
+		toastTimer = setTimeout(() => {
+			dom.toast.classList.remove('show');
+		}, 2400);
 	}
 
-	/**
-	 * Converts a raw byte count (e.g., `87532`) into a human-readable file size
-	 * string (`"85.5 KB"` or `"1.24 MB"`).
-	 *
-	 * @param {number|null} bytes - File size in bytes from Azure XML `<Content-Length>`.
-	 * @returns {string} Formatted size string, or empty string if unknown.
-	 */
 	function formatBytes(bytes) {
 		if (!bytes || isNaN(bytes)) return '';
 		if (bytes < 1024) return `${bytes} B`;
@@ -1122,30 +1261,6 @@
 		return `${(kb / 1024).toFixed(2)} MB`;
 	}
 
-	/**
-	 * Formats a date string (such as Azure's `<Last-Modified>` header) into a concise,
-	 * readable date like `"Nov 3, 2026"`.
-	 *
-	 * @param {string|null} dateStr - Raw date string.
-	 * @returns {string} Formatted short date, or empty string if invalid.
-	 */
-	function formatShortDate(dateStr) {
-		const d = new Date(dateStr);
-		if (isNaN(d.getTime())) return '';
-		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-	}
-
-	/**
-	 * Security helper: Escapes special HTML characters (`&`, `<`, `>`, `"`, `'`)
-	 * before inserting dynamic strings into `.innerHTML` templates.
-	 *
-	 * Why this is important:
-	 * It prevents broken HTML markup (for example, when storing `<script src="...">` inside
-	 * a `data-copy-text="..."` attribute) and protects against Cross-Site Scripting (XSS).
-	 *
-	 * @param {string} str - Raw string to escape.
-	 * @returns {string} HTML-safe string.
-	 */
 	function escapeHtml(str) {
 		return String(str)
 			.replace(/&/g, '&amp;')
@@ -1155,6 +1270,201 @@
 			.replace(/'/g, '&#39;');
 	}
 
-	// Start the application once the browser has finished parsing the HTML DOM
-	document.addEventListener('DOMContentLoaded', init);
+	function escapeAttr(str) {
+		return escapeHtml(str);
+	}
+
+	/* ==========================================================================
+	   12. BASE URL INITIALIZATION & EVENT LISTENERS
+	   ========================================================================== */
+
+	/**
+	 * Initializes the Base URL input box on startup:
+	 *   - On `localhost` / `127.0.0.1`: Uses the local dev server URL so clicking
+	 *     "Open Raw File" or "Copy URL" points to the local files being tested.
+	 *   - On `*.blob.core.windows.net`: Automatically derives the container URL.
+	 *   - Everywhere else: Defaults to `https://jhmcdn.blob.core.windows.net/global-assets`.
+	 */
+	function initBaseUrl() {
+		const host = window.location.hostname;
+		const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+
+		if (isLocalhost) {
+			const cleanPath = window.location.pathname
+				.replace(/\/index\.html$/i, '')
+				.replace(/\/+$/, '');
+			state.baseUrl = `${window.location.origin}${cleanPath}`;
+		} else if (host.endsWith('.blob.core.windows.net')) {
+			const pathParts = window.location.pathname.split('/').filter(Boolean);
+			const container = pathParts.length > 0 ? `/${pathParts[0]}` : '';
+			state.baseUrl = `${window.location.origin}${container}`;
+		} else {
+			state.baseUrl = DEFAULT_AZURE_CONTAINER_URL;
+		}
+		dom.baseUrlInput.value = state.baseUrl;
+	}
+
+	/**
+	 * Attaches all user interaction event listeners (search input, keyboard
+	 * shortcuts, category filter tabs, source selector, version dropdowns,
+	 * copy buttons, and the Generate Image HTML Tag modal).
+	 */
+	function bindEvents() {
+		// Live search input
+		dom.searchInput.addEventListener('input', (e) => {
+			state.searchQuery = e.target.value;
+			renderAssetsGrid();
+		});
+
+		// Global keyboard shortcuts: `/` focuses search, `Escape` closes modal or clears search
+		document.addEventListener('keydown', (e) => {
+			if (state.modal.isOpen) {
+				if (e.key === 'Escape') {
+					e.preventDefault();
+					closeImageTagModal();
+				}
+				return;
+			}
+
+			if (e.key === '/' && document.activeElement !== dom.searchInput && document.activeElement !== dom.baseUrlInput) {
+				e.preventDefault();
+				dom.searchInput.focus();
+			} else if (e.key === 'Escape' && document.activeElement === dom.searchInput) {
+				dom.searchInput.value = '';
+				state.searchQuery = '';
+				renderAssetsGrid();
+				dom.searchInput.blur();
+			}
+		});
+
+		// Category filter tabs (All / JavaScript / Stylesheets / Images)
+		dom.filterTabs.forEach((tab) => {
+			tab.addEventListener('click', () => {
+				dom.filterTabs.forEach((t) => {
+					t.classList.remove('active');
+					t.setAttribute('aria-pressed', 'false');
+				});
+				tab.classList.add('active');
+				tab.setAttribute('aria-pressed', 'true');
+				state.filterCategory = tab.getAttribute('data-filter') || 'all';
+				renderAssetsGrid();
+			});
+		});
+
+		// Base URL manual override
+		dom.baseUrlInput.addEventListener('change', () => {
+			state.baseUrl = dom.baseUrlInput.value.trim() || DEFAULT_AZURE_CONTAINER_URL;
+			renderAssetsGrid();
+		});
+
+		// Source Mode dropdown change
+		if (dom.sourceModeSelect) {
+			dom.sourceModeSelect.addEventListener('change', () => {
+				discoverAssets();
+			});
+		}
+
+		// Sync / Refresh button
+		dom.refreshBtn.addEventListener('click', () => {
+			state.baseUrl = dom.baseUrlInput.value.trim() || DEFAULT_AZURE_CONTAINER_URL;
+			discoverAssets();
+		});
+
+		// Reset search & filters button (shown in Empty State)
+		dom.resetSearchBtn.addEventListener('click', () => {
+			state.searchQuery = '';
+			state.filterCategory = 'all';
+			state.selectedVersions = {};
+			dom.searchInput.value = '';
+			dom.filterTabs.forEach((t) => {
+				const isAll = t.getAttribute('data-filter') === 'all';
+				t.classList.toggle('active', isAll);
+				t.setAttribute('aria-pressed', isAll ? 'true' : 'false');
+			});
+			renderAssetsGrid();
+		});
+
+		// Delegated listener for per-card Version `<select>` dropdowns
+		dom.assetsGrid.addEventListener('change', (e) => {
+			const selectEl = e.target.closest('.version-select');
+			if (!selectEl) return;
+			const libKey = selectEl.getAttribute('data-lib-key');
+			state.selectedVersions[libKey] = selectEl.value;
+			renderAssetsGrid();
+		});
+
+		// Delegated listener for Copy buttons AND "Generate Tag" modal trigger buttons
+		dom.assetsGrid.addEventListener('click', (e) => {
+			const modalTriggerBtn = e.target.closest('button[data-open-img-modal]');
+			if (modalTriggerBtn) {
+				openImageTagModal({
+					fileUrl: modalTriggerBtn.getAttribute('data-img-url') || '',
+					fileName: modalTriggerBtn.getAttribute('data-img-name') || '',
+					predefinedAlt: modalTriggerBtn.getAttribute('data-img-alt') || '',
+					predefinedCaption: modalTriggerBtn.getAttribute('data-img-figcaption') || '',
+					hasPredefined: modalTriggerBtn.getAttribute('data-img-has-meta') === 'true',
+					triggerEl: modalTriggerBtn
+				});
+				return;
+			}
+
+			const copyBtn = e.target.closest('button[data-copy]');
+			if (!copyBtn) return;
+			const textToCopy = copyBtn.getAttribute('data-copy');
+			const label = copyBtn.getAttribute('data-label') || 'Snippet';
+			copyToClipboard(textToCopy, label, copyBtn);
+		});
+
+		// Modal Event Listeners
+		if (dom.imgTagModalBackdrop) {
+			// Toggle between `<img> tag only` and `<img> with <figure> and <figcaption>`
+			if (dom.modeImgOnlyBtn) {
+				dom.modeImgOnlyBtn.addEventListener('click', () => setModalTagMode('img'));
+			}
+			if (dom.modeFigureBtn) {
+				dom.modeFigureBtn.addEventListener('click', () => setModalTagMode('figure'));
+			}
+
+			// Toggle Lock / Unlock to customize predefined metadata
+			if (dom.toggleEditPredefinedBtn) {
+				dom.toggleEditPredefinedBtn.addEventListener('click', toggleModalPredefinedLock);
+			}
+
+			// Real-time live preview updates if user unlocks and edits Alt or Figcaption fields
+			if (dom.modalAltInput) {
+				dom.modalAltInput.addEventListener('input', updateModalLivePreview);
+			}
+			if (dom.modalCaptionInput) {
+				dom.modalCaptionInput.addEventListener('input', updateModalLivePreview);
+			}
+
+			// Close modal buttons & backdrop click
+			if (dom.closeImgModalBtn) {
+				dom.closeImgModalBtn.addEventListener('click', closeImageTagModal);
+			}
+			if (dom.cancelImgModalBtn) {
+				dom.cancelImgModalBtn.addEventListener('click', closeImageTagModal);
+			}
+			dom.imgTagModalBackdrop.addEventListener('click', (e) => {
+				if (e.target === dom.imgTagModalBackdrop) {
+					closeImageTagModal();
+				}
+			});
+
+			// Copy Generated Tag button inside modal
+			if (dom.copyModalTagBtn) {
+				dom.copyModalTagBtn.addEventListener('click', () => {
+					const generatedSnippet = buildModalImageHtmlSnippet();
+					copyToClipboard(generatedSnippet, 'Generated Image HTML Tag', dom.copyModalTagBtn);
+				});
+			}
+		}
+	}
+
+	/* ==========================================================================
+	   13. APPLICATION BOOTSTRAP
+	   ========================================================================== */
+	initBaseUrl();
+	bindEvents();
+	discoverAssets();
 })();

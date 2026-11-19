@@ -38,7 +38,7 @@
 		<div class="container">
 			<div class="hero-content">
 				<h2 id="docsHeroHeading">How to Use Johns Hopkins Medicine Global Assets</h2>
-				<p>Complete guide for both <strong>Users</strong> consuming CDN scripts/styles and <strong>Developers</strong> maintaining the repository.</p>
+				<p>Complete guide for both <strong>Users</strong> consuming CDN scripts, stylesheets, and images, and <strong>Developers</strong> maintaining the repository and predefined image metadata.</p>
 
 				<nav class="docs-role-tabs" aria-label="Documentation Role Sections">
 					<a href="#user-guide" class="docs-role-tab active" data-target="user-guide" aria-current="true">
@@ -71,15 +71,17 @@
 					<a href="#user-search" class="toc-link">2. Searching &amp; Filtering</a>
 					<a href="#user-versions" class="toc-link">3. Selecting Versions</a>
 					<a href="#user-copying" class="toc-link">4. Copying URLs &amp; HTML Tags</a>
-					<a href="#user-embedding" class="toc-link">5. Embedding in Your Site</a>
+					<a href="#user-img-modal" class="toc-link">5. Generating Image Tags</a>
+					<a href="#user-embedding" class="toc-link">6. Embedding in Your Site</a>
 				</div>
 				<div class="toc-group">
 					<span class="toc-heading">Developer Guide</span>
 					<a href="#developer-guide" class="toc-link">1. Architecture &amp; Conventions</a>
-					<a href="#dev-adding-assets" class="toc-link">2. Adding New Libraries/Versions</a>
-					<a href="#dev-local-workflow" class="toc-link">3. Local Development Workflow</a>
-					<a href="#dev-azure-setup" class="toc-link">4. Azure Blob Storage &amp; CORS</a>
-					<a href="#dev-discovery-engine" class="toc-link">5. How Auto-Discovery Works</a>
+					<a href="#dev-adding-assets" class="toc-link">2. Adding JS/CSS Libraries</a>
+					<a href="#dev-adding-images" class="toc-link">3. Adding Images &amp; Predefined Metadata</a>
+					<a href="#dev-local-workflow" class="toc-link">4. Local Development Workflow</a>
+					<a href="#dev-azure-setup" class="toc-link">5. Azure Blob Storage &amp; CORS</a>
+					<a href="#dev-discovery-engine" class="toc-link">6. How Auto-Discovery Works</a>
 				</div>
 			</nav>
 		</aside>
@@ -94,15 +96,15 @@
 				<div class="section-banner user-banner">
 					<span class="section-pill">Perspective 01</span>
 					<h2>User Guide &mdash; Consuming Global Assets</h2>
-					<p>For web authors, site builders, and application teams embedding shared JavaScript and CSS libraries from the Johns Hopkins Medicine CDN.</p>
+					<p>For web authors, site builders, and application teams embedding shared JavaScript, CSS stylesheets, and official images from the Johns Hopkins Medicine CDN.</p>
 				</div>
 
 				<div class="docs-card" id="user-search">
-					<h3>1. Searching &amp; Filtering Libraries</h3>
-					<p>The Global Assets Portal provides instant access to approved JavaScript and CSS libraries hosted on Azure Blob Storage.</p>
+					<h3>1. Searching &amp; Filtering Assets</h3>
+					<p>The Global Assets Portal provides instant access to approved JavaScript, CSS, and image assets hosted on Azure Blob Storage.</p>
 					<ul class="docs-list">
-						<li><strong>Instant Search:</strong> Click the search bar (or press <kbd>/</kbd> on your keyboard) and type a library name, version number, or filename &mdash; for example, <code>jquery 5.3</code> or <code>font-awesome</code>.</li>
-						<li><strong>Category Filter Tabs:</strong> Use the filter tabs beneath the search bar to switch between <strong>All Assets</strong>, <strong>JavaScript</strong> (<code>/js/cdn/</code>), or <strong>Stylesheets</strong> (<code>/css/cdn/</code>).</li>
+						<li><strong>Instant Search:</strong> Click the search bar (or press <kbd>/</kbd> on your keyboard) and type a library name, image category, predefined alt text, version number, or filename &mdash; for example, <code>bootstrap</code>, <code>font-awesome</code>, or <code>jhm-logo</code>.</li>
+						<li><strong>Category Filter Tabs:</strong> Use the filter tabs beneath the search bar to switch between <strong>All Assets</strong>, <strong>JavaScript</strong> (<code>/js/cdn/</code>), <strong>Stylesheets</strong> (<code>/css/cdn/</code>), or <strong>Images</strong> (<code>/img/cdn/</code>).</li>
 					</ul>
 				</div>
 
@@ -110,8 +112,9 @@
 					<h3>2. Selecting Library Versions</h3>
 					<p>Each library card groups all available versions of that asset together so you can easily target a specific release.</p>
 					<ul class="docs-list">
-						<li>Use the <strong>Version</strong> dropdown in the top-right corner of any library card to filter that card to a specific version (e.g., <code>v5.3 (Latest)</code> or <code>v4.1</code>).</li>
+						<li>Use the <strong>Version</strong> dropdown in the top-right corner of any library card to filter that card to a specific version (e.g., <code>v5.3.8 (Latest)</code> or <code>v4.7.0</code>).</li>
 						<li>Select <strong>All Versions</strong> to compare all hosted versions side by side.</li>
+						<li>For flat image category folders (such as <code>/img/cdn/logos/</code>), the version selector is automatically hidden unless versioned subfolders exist.</li>
 					</ul>
 				</div>
 
@@ -121,22 +124,38 @@
 					<div class="feature-grid">
 						<div class="feature-box">
 							<h4>Copy URL</h4>
-							<p>Copies the raw direct HTTPS link to the file on the JHM Azure CDN (useful for module loaders, CMS fields, or dynamic script loaders).</p>
+							<p>Copies the raw direct HTTPS link to the file on the JHM Azure CDN (useful for module loaders, CMS fields, or CSS background images).</p>
 						</div>
 						<div class="feature-box">
-							<h4>Copy <code>&lt;script&gt;</code> / <code>&lt;link&gt;</code></h4>
-							<p>Copies a complete, ready-to-paste HTML tag formatted automatically for either JavaScript or CSS.</p>
+							<h4>Copy <code>&lt;script&gt;</code> / <code>&lt;link&gt;</code> / Generate Tag</h4>
+							<p>Copies a complete, ready-to-paste HTML tag for JS/CSS, or opens the <strong>Generate Image HTML Tag</strong> modal pre-populated with official metadata.</p>
 						</div>
 						<div class="feature-box">
 							<h4>Open Raw File</h4>
-							<p>Opens the asset directly in a new browser tab so you can inspect the file contents or verify version headers.</p>
+							<p>Opens the asset directly in a new browser tab so you can inspect the file contents or view the full-resolution image.</p>
 						</div>
 					</div>
 				</div>
 
+				<div class="docs-card" id="user-img-modal">
+					<h3>4. Generating Image Tags (Predefined Metadata)</h3>
+					<p>Every official image in the <strong>Images</strong> tab includes pre-approved <code>alt</code> and <code>&lt;figcaption&gt;</code> text defined in the repository's <code>images</code> catalog. Clicking <strong>Generate Tag</strong> opens the tag generator modal:</p>
+					<ul class="docs-list">
+						<li>
+							<strong>Format Toggle:</strong> Switch between:
+							<ul>
+								<li><code>&lt;img&gt; tag only</code> &mdash; Generates a standalone <code>&lt;img src="..." alt="..." loading="lazy"&gt;</code> tag using the predefined <code>alt</code> text.</li>
+								<li><code>&lt;img&gt; with &lt;figure&gt; and &lt;figcaption&gt;</code> &mdash; Wraps the image in semantic <code>&lt;figure&gt;</code> and <code>&lt;figcaption&gt;</code> markup pre-populated with both the predefined <code>alt</code> and <code>figcaption</code> text.</li>
+							</ul>
+						</li>
+						<li><strong>Pre-Populated &amp; Ready to Copy:</strong> Both the <strong>Alt Text</strong> and <strong>Caption Text (<code>&lt;figcaption&gt;</code>)</strong> fields are automatically filled from the predefined <code>images[]</code> array and locked by default to ensure brand and accessibility consistency.</li>
+						<li><strong>Optional Override:</strong> If a page requires custom context, click <strong>Unlock to Customize</strong> to edit the text in real time, or click <strong>Reset to Predefined</strong> to restore the official values.</li>
+					</ul>
+				</div>
+
 				<div class="docs-card" id="user-embedding">
-					<h3>4. Embedding Assets in Your Web Pages</h3>
-					<p>Paste CSS <code>&lt;link&gt;</code> tags inside your document's <code>&lt;head&gt;</code>, and JavaScript <code>&lt;script&gt;</code> tags either in <code>&lt;head&gt;</code> or right before the closing <code>&lt;/body&gt;</code> tag:</p>
+					<h3>5. Embedding Assets in Your Web Pages</h3>
+					<p>Paste CSS <code>&lt;link&gt;</code> tags inside your document's <code>&lt;head&gt;</code>, JavaScript <code>&lt;script&gt;</code> tags in <code>&lt;head&gt;</code> or right before <code>&lt;/body&gt;</code>, and generated <code>&lt;img&gt;</code> or <code>&lt;figure&gt;</code> tags directly into your page body:</p>
 					<pre class="code-block"><code>&lt;!DOCTYPE html&gt;
 &lt;html lang="en"&gt;
 &lt;head&gt;
@@ -144,12 +163,18 @@
   &lt;title&gt;JHM Web Application&lt;/title&gt;
 
   &lt;!-- Font Awesome Stylesheet from JHM Global Assets CDN --&gt;
-  &lt;link rel="stylesheet" href="https://jhmcdn.blob.core.windows.net/global-assets/css/cdn/font-awesome/5.3/all.min.css"&gt;
+  &lt;link rel="stylesheet" href="https://jhmcdn.blob.core.windows.net/global-assets/css/cdn/font-awesome/6.7.2/all.min.css"&gt;
 &lt;/head&gt;
 &lt;body&gt;
 
-  &lt;!-- jQuery Script from JHM Global Assets CDN --&gt;
-  &lt;script src="https://jhmcdn.blob.core.windows.net/global-assets/js/cdn/jquery/5.3/jquery.min.js"&gt;&lt;/script&gt;
+  &lt;!-- Generated Image with Predefined Alt &amp; Figcaption from JHM Global Assets CDN --&gt;
+  &lt;figure&gt;
+    &lt;img src="https://jhmcdn.blob.core.windows.net/global-assets/img/cdn/logos/jhm-logo.png" alt="Johns Hopkins Medicine official horizontal logo" loading="lazy"&gt;
+    &lt;figcaption&gt;Johns Hopkins Medicine — Official Brand Mark&lt;/figcaption&gt;
+  &lt;/figure&gt;
+
+  &lt;!-- Bootstrap Script from JHM Global Assets CDN --&gt;
+  &lt;script src="https://jhmcdn.blob.core.windows.net/global-assets/js/cdn/bootstrap/5.3.8/bootstrap.min.js"&gt;&lt;/script&gt;
 &lt;/body&gt;
 &lt;/html&gt;</code></pre>
 				</div>
@@ -162,91 +187,91 @@
 				<div class="section-banner dev-banner">
 					<span class="section-pill">Perspective 02</span>
 					<h2>Developer Guide &mdash; Maintaining &amp; Extending the Repository</h2>
-					<p>For engineers managing the Global Assets codebase, adding new libraries or versions, testing locally, and deploying to Azure Blob Storage.</p>
+					<p>For engineers managing the Global Assets codebase, adding new libraries, versions, or images, maintaining the predefined <code>images[]</code> metadata array, and deploying to Azure Blob Storage.</p>
 				</div>
 
 				<div class="docs-card" id="dev-architecture">
 					<h3>1. Directory Structure &amp; Separation of Concerns</h3>
-					<p>To strictly separate the <strong>Portal UI</strong> files from the <strong>Hosted CDN Libraries</strong>, the repository enforces a clean <code>/cdn/</code> subfolder boundary:</p>
+					<p>To strictly separate the <strong>Portal UI</strong> files from the <strong>Hosted CDN Assets</strong>, the repository enforces a clean <code>/cdn/</code> subfolder boundary across <code>/css/</code>, <code>/js/</code>, and <code>/img/</code>:</p>
 					<pre class="code-block"><code>/
 ├── index.html                                    # Main Global Assets Portal UI
 ├── docs/
 │   └── index.html                                # User &amp; Developer Documentation (this page)
 ├── img/
-│   ├── favicon.ico                               # Browser tab favicon
-│   └── logo.png                                  # Johns Hopkins Medicine official logo
+│   ├── favicon.ico                               # Portal browser tab favicon (excluded from CDN)
+│   ├── logo.png                                  # Portal header logo (excluded from CDN)
+│   └── cdn/                                      # &lt;-- Hosted Image CDN Assets live here
+│       └── logos/
+│           └── jhm-logo.png
 ├── css/
 │   ├── site.css                                  # Stylesheet for the Portal UI &amp; Docs ONLY
 │   └── cdn/                                      # &lt;-- Hosted CSS CDN Libraries live here
 │       └── font-awesome/
-│           ├── 4.1/
-│           │   └── font-awesome.min.css
-│           └── 5.3/
+│           └── 6.7.2/
 │               └── all.min.css
 └── js/
-    ├── site.js                                   # Dynamic discovery, search &amp; copy logic for the UI
+    ├── site.js                                   # Predefined images[] array + discovery &amp; UI logic
     └── cdn/                                      # &lt;-- Hosted JS CDN Libraries live here
-        └── jquery/
-            ├── 4.1/
-            │   └── jquery.min.js
-            └── 5.3/
-                └── jquery.min.js</code></pre>
+        └── bootstrap/
+            └── 5.3.8/
+                └── bootstrap.min.js</code></pre>
 					<p class="docs-note">
-						<strong>Why this matters:</strong> The discovery engine in <code>/js/site.js</code> specifically scans paths matching <code>^(css|js)/cdn/{library}/{version}/{file}$</code>. Portal files like <code>/css/site.css</code>, <code>/js/site.js</code>, and <code>/docs/index.html</code> are automatically excluded from the CDN catalog!
+						<strong>Why this matters:</strong> The discovery engine in <code>/js/site.js</code> specifically scans paths inside <code>/css/cdn/</code>, <code>/js/cdn/</code>, and <code>/img/cdn/</code>. Portal UI files like <code>/img/logo.png</code>, <code>/img/favicon.ico</code>, <code>/css/site.css</code>, <code>/js/site.js</code>, and <code>/docs/index.html</code> are automatically excluded from the CDN catalog!
 					</p>
 				</div>
 
 				<div class="docs-card" id="dev-adding-assets">
-					<h3>2. Step-by-Step: Adding a New Library Directory or Version</h3>
-					<p>Because <code>/js/site.js</code> dynamically scans all folders matching <code>/{css|js}/cdn/{directory-name}/{version}/{file}</code>, you do <strong>not</strong> need to make any code changes to add a brand-new asset directory (beyond <code>jquery</code> or <code>font-awesome</code>) or a new version.</p>
-
-					<h4>Scenario A: Adding Any New Directory or Version (Zero Code Changes)</h4>
+					<h3>2. Adding New JS or CSS Libraries / Versions</h3>
+					<p>Because <code>/js/site.js</code> dynamically scans all folders matching <code>/{css|js}/cdn/{library-name}/{version}/{file}</code>, you do <strong>not</strong> need to make any code changes when adding JS or CSS libraries:</p>
 					<ol class="docs-list ordered">
 						<li>
-							<strong>Step 1 &mdash; Create the new library folder inside <code>/js/cdn/</code> or <code>/css/cdn/</code>:</strong><br>
-							For example, to add a new <code>scripts</code> directory for internal JS or a <code>bootstrap</code> directory for CSS:<br>
-							<code>/js/cdn/scripts/</code> or <code>/css/cdn/bootstrap/</code>
+							<strong>Create the library and version folder inside <code>/js/cdn/</code> or <code>/css/cdn/</code>:</strong><br>
+							<code>/js/cdn/{library-name}/{version}/</code> or <code>/css/cdn/{library-name}/{version}/</code>
 						</li>
 						<li>
-							<strong>Step 2 &mdash; Create a version subfolder inside it:</strong><br>
-							Every asset directory must contain at least one version subfolder (e.g., <code>1.0</code>, <code>5.3.2</code>, or <code>latest</code>):<br>
-							<code>/js/cdn/scripts/1.0/</code> or <code>/css/cdn/bootstrap/5.3.2/</code>
-						</li>
-						<li>
-							<strong>Step 3 &mdash; Place your <code>.js</code> or <code>.css</code> file(s) inside that version folder:</strong><br>
-							<code>/js/cdn/scripts/1.0/custom-header.js</code><br>
-							<code>/css/cdn/bootstrap/5.3.2/bootstrap.min.css</code>
-						</li>
-						<li>
-							<strong>Step 4 &mdash; Refresh Locally or Upload to Azure:</strong>
-							<ul>
-								<li><strong>On <code>localhost</code> (VS Code Live Server):</strong> Simply refresh your browser tab. The local folder crawler will immediately detect the new directory, create a new library card (automatically capitalizing the folder name and converting hyphens to spaces), and generate the Copy buttons.</li>
-								<li><strong>In Azure Blob Storage:</strong> Upload the folder into the <code>global-assets</code> container and click <strong>Sync</strong> (or refresh <code>index.html</code>).</li>
-							</ul>
+							<strong>Place your <code>.js</code> or <code>.css</code> file(s) inside that version folder:</strong><br>
+							<code>/js/cdn/bootstrap/5.3.8/bootstrap.min.js</code>
 						</li>
 					</ol>
+				</div>
 
-					<h4 style="margin-top: 1.25rem;">Scenario B: Optional Code Customization in <code>/js/site.js</code></h4>
-					<p>You only need to touch <code>/js/site.js</code> if you want custom display formatting for a library's card title:</p>
-					<ul class="docs-list">
+				<div class="docs-card" id="dev-adding-images">
+					<h3>3. Adding Images to <code>/img/cdn/</code> &amp; Updating the <code>images[]</code> Array</h3>
+					<p>Whenever you add a new image into <code>/img/cdn/</code>, follow this 2-step workflow so the image has predefined <code>alt</code> and <code>figcaption</code> metadata:</p>
+					<ol class="docs-list ordered">
 						<li>
-							<strong>Custom Card Title Capitalization (<code>formatLibraryDisplayName</code>):</strong><br>
-							By default, a folder named <code>jhm-analytics</code> is automatically formatted as <strong>"Jhm Analytics"</strong>. If you want special acronym casing (like <strong>"JHM Analytics"</strong>), add an entry to the <code>knownNames</code> object inside <code>formatLibraryDisplayName(slug)</code> in <code>/js/site.js</code>:
-							<pre class="code-block" style="margin-top: 0.4rem;"><code>const knownNames = {
-  'jquery': 'jQuery',
-  'font-awesome': 'Font Awesome',
-  'jhm-analytics': 'JHM Analytics' // &lt;-- Custom display title
-};</code></pre>
+							<strong>Step 1 &mdash; Add the image file into a category folder under <code>/img/cdn/</code>:</strong><br>
+							For example: <code>/img/cdn/logos/jhm-logo.png</code> (if an image ever needs a version number, include it in the filename, e.g., <code>jhm-logo-v2.png</code>).
 						</li>
-					</ul>
+						<li>
+							<strong>Step 2 &mdash; Add a matching entry to the <code>images</code> array at the top of <code>/js/site.js</code>:</strong><br>
+							Open <code>/js/site.js</code> and add an object with <code>source</code>, <code>alt</code>, and <code>figcaption</code> to the <code>images</code> array right at the top of the file:
+							<pre class="code-block" style="margin-top: 0.45rem;"><code>const images = [
+  {
+    source: '../img/cdn/logos/jhm-logo.png',
+    alt: 'Johns Hopkins Medicine official horizontal logo',
+    figcaption: 'Johns Hopkins Medicine — Official Brand Mark'
+  },
+  // Add your new image entry here to match what is in /img/cdn/:
+  {
+    source: '../img/cdn/logos/jhm-crest.svg',
+    alt: 'Johns Hopkins Medicine shield crest',
+    figcaption: 'Official Johns Hopkins Medicine Academic Shield'
+  }
+];</code></pre>
+						</li>
+					</ol>
+					<p class="docs-note">
+						<strong>Developer Safeguard:</strong> If an image file is placed in <code>/img/cdn/</code> but has not yet been added to the <code>images[]</code> array in <code>/js/site.js</code>, the portal will still discover the image and display a yellow reminder note on the row (<code>Note: Add this image to the images[] array in js/site.js</code>) so you can spot missing metadata immediately during local testing.
+					</p>
 				</div>
 
 				<div class="docs-card" id="dev-local-workflow">
-					<h3>3. Local Development Workflow (VS Code Live Server Required)</h3>
+					<h3>4. Local Development Workflow (VS Code Live Server Required)</h3>
 					<p>When working locally on your machine, you must run a local HTTP server (such as the VS Code <strong>Live Server</strong> extension) to test local <code>/cdn/</code> folders:</p>
 					<ul class="docs-list">
 						<li><strong>Why VS Code Live Server is Required:</strong> Modern web browsers block JavaScript <code>fetch()</code> from scanning local hard drive folders when a file is opened directly via double-click (<code>file:///C:/...</code>). Opening the project with VS Code <em>Live Server</em> (<code>http://127.0.0.1:5500</code> or <code>http://localhost:5500</code>) serves HTML directory listings that <code>/js/site.js</code> automatically crawls.</li>
-						<li><strong>Automatic Local URLs:</strong> When running on <code>localhost</code> or <code>127.0.0.1</code>, the portal automatically sets the Base URL to your local server address so clicking <strong>Copy URL</strong> or <strong>Open Raw File</strong> tests your local files directly before you upload them to Azure.</li>
+						<li><strong>Automatic Local URLs:</strong> When running on <code>localhost</code> or <code>127.0.0.1</code>, the portal automatically sets the Base URL to your local server address so clicking <strong>Copy URL</strong>, <strong>Generate Tag</strong>, or <strong>Open Raw File</strong> tests your local files directly before you upload them to Azure.</li>
 						<li><strong>Source Switcher in the UI:</strong> Use the <strong>Source</strong> dropdown in the top toolbar to switch between:
 							<ul>
 								<li><code>Auto (Smart Detect)</code> &mdash; Uses local folders on <code>localhost</code>, or Azure Live XML in production.</li>
@@ -258,7 +283,7 @@
 				</div>
 
 				<div class="docs-card" id="dev-azure-setup">
-					<h3>4. Azure Blob Storage &amp; CORS Configuration</h3>
+					<h3>5. Azure Blob Storage &amp; CORS Configuration</h3>
 					<p>For live Azure auto-discovery and cross-domain asset loading to work, the Azure Storage Account (<code>jhmcdn</code>) and container (<code>global-assets</code>) are configured as follows:</p>
 					<ul class="docs-list">
 						<li>
@@ -278,11 +303,11 @@
 				</div>
 
 				<div class="docs-card" id="dev-discovery-engine">
-					<h3>5. How the 2-Tier Discovery Engine Works (<code>/js/site.js</code>)</h3>
+					<h3>6. How the 2-Tier Discovery Engine Works (<code>/js/site.js</code>)</h3>
 					<p>Under the hood, <code>/js/site.js</code> uses a clean 2-tier discovery pipeline:</p>
 					<ol class="docs-list ordered">
-						<li><strong>Tier 1 &mdash; Azure Blob Live XML:</strong> Fetches <code>?restype=container&amp;comp=list</code> (with automatic <code>&lt;NextMarker&gt;</code> pagination support for large containers), parses each <code>&lt;Blob&gt;</code> node, extracts file size and last-modified date, and filters for <code>^(css|js)/cdn/</code> paths.</li>
-						<li><strong>Tier 2 &mdash; Local Dev Server Crawler:</strong> Recursively crawls directory links inside <code>/css/cdn/</code> and <code>/js/cdn/</code> when running on a local dev server (such as VS Code Live Server on <code>localhost</code> / <code>127.0.0.1</code>).</li>
+						<li><strong>Tier 1 &mdash; Azure Blob Live XML:</strong> Fetches <code>?restype=container&amp;comp=list</code> (with automatic <code>&lt;NextMarker&gt;</code> pagination support for large containers), parses each <code>&lt;Blob&gt;</code> node, extracts file size and last-modified date, filters for <code>^(css|js|img)/cdn/</code> paths via <code>parseCdnAssetPath()</code>, and joins image assets with the predefined <code>images[]</code> metadata array.</li>
+						<li><strong>Tier 2 &mdash; Local Dev Server Crawler:</strong> Recursively crawls directory links inside <code>/css/cdn/</code>, <code>/js/cdn/</code>, and <code>/img/cdn/</code> when running on a local dev server (such as VS Code Live Server on <code>localhost</code> / <code>127.0.0.1</code>).</li>
 					</ol>
 				</div>
 			</section>
