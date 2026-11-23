@@ -9,12 +9,11 @@
  *   1. Automatically discover all CSS, JS, and Image files inside `/css/cdn/`,
  *      `/js/cdn/`, and `/img/cdn/`.
  *   2. Match discovered images against the predefined `images` metadata array
- *      below so every image has official, pre-approved `alt` and `figcaption`
- *      text ready to use.
+ *      below so every image has official, pre-approved `alt` text ready to use.
  *   3. Group discovered files by Library/Category Name and Version.
  *   4. Render interactive cards on the page so users can search, filter by
  *      category or version, and copy ready-to-use URLs or HTML tags (`<script>`,
- *      `<link>`, `<img>`, or `<figure>` + `<figcaption>`).
+ *      `<link>`, or `<img>`).
  *
  * HOW ASSET DISCOVERY WORKS (2-Tier Strategy):
  *   - Tier 1 (Azure Blob Storage XML API):
@@ -37,19 +36,16 @@
      - `source`: Path to the image inside `/img/cdn/` (supports `../img/cdn/...`,
                  `img/cdn/...`, or `../images/cdn/...`)
      - `alt`: Predefined accessible alternative text for the `alt=""` attribute
-     - `figcaption`: Predefined caption text for the `<figcaption>` element
    ========================================================================== */
 const images = [
 	{
 		source: '../img/cdn/logos/jhm-logo.png',
-		alt: 'Johns Hopkins Medicine official horizontal logo',
-		figcaption: 'Johns Hopkins Medicine — Official Brand Mark'
+		alt: 'Johns Hopkins Medicine official horizontal logo'
 	}
 	// Add additional images below to match what is inside /img/cdn/:
 	// {
 	// 	source: '../img/cdn/logos/example-image.png',
-	// 	alt: 'Image alt text',
-	// 	figcaption: 'Image figcaption text'
+	// 	alt: 'Image alt text'
 	// }
 ];
 
@@ -81,7 +77,7 @@ const images = [
 	   - `selectedVersions`: Remembers which version dropdown option a user
 	     picked on a specific library card (keyed by `"type:library"`).
 	   - `libraries`: Array of grouped library objects built from the raw file list.
-	   - `modal`: State for the interactive "Generate Tag" image modal.
+	   - `modal`: State for the "Generate Tag" image modal.
 	   ========================================================================== */
 	const state = {
 		baseUrl: DEFAULT_AZURE_CONTAINER_URL,
@@ -91,13 +87,9 @@ const images = [
 		libraries: [],
 		modal: {
 			isOpen: false,
-			mode: 'img', // 'img' or 'figure'
 			fileUrl: '',
 			fileName: '',
 			predefinedAlt: '',
-			predefinedFigcaption: '',
-			hasPredefinedMatch: false,
-			isUnlockedForCustomEdit: false,
 			lastFocusedElement: null
 		}
 	};
@@ -130,14 +122,6 @@ const images = [
 		modalImgPreview: document.getElementById('modalImgPreview'),
 		modalImgName: document.getElementById('modalImgName'),
 		modalImgUrl: document.getElementById('modalImgUrl'),
-		modalPredefinedBadge: document.getElementById('modalPredefinedBadge'),
-		modalLockStatusText: document.getElementById('modalLockStatusText'),
-		toggleEditPredefinedBtn: document.getElementById('toggleEditPredefinedBtn'),
-		modeImgOnlyBtn: document.getElementById('modeImgOnlyBtn'),
-		modeFigureBtn: document.getElementById('modeFigureBtn'),
-		modalAltInput: document.getElementById('modalAltInput'),
-		modalCaptionGroup: document.getElementById('modalCaptionGroup'),
-		modalCaptionInput: document.getElementById('modalCaptionInput'),
 		modalCodeOutput: document.getElementById('modalCodeOutput'),
 		copyModalTagBtn: document.getElementById('copyModalTagBtn'),
 		copyModalTagText: document.getElementById('copyModalTagText')
@@ -189,7 +173,7 @@ const images = [
 	 *
 	 * @param {string} relativePath - Discovered CDN path (e.g. `img/cdn/logos/jhm-logo.png`)
 	 * @param {string} fileName     - Discovered filename (e.g. `jhm-logo.png`)
-	 * @returns {{ source: string, alt: string, figcaption: string } | null}
+	 * @returns {{ source: string, alt: string } | null}
 	 */
 	function findPredefinedImageMeta(relativePath, fileName) {
 		if (!Array.isArray(images) || images.length === 0) return null;
@@ -204,8 +188,7 @@ const images = [
 			if (candidateNormalized === targetNormalized) {
 				return {
 					source: item.source,
-					alt: String(item.alt || ''),
-					figcaption: String(item.figcaption || '')
+					alt: String(item.alt || '')
 				};
 			}
 		}
@@ -218,8 +201,7 @@ const images = [
 			if (candidateFileName && candidateFileName === targetFileLower) {
 				return {
 					source: item.source,
-					alt: String(item.alt || ''),
-					figcaption: String(item.figcaption || '')
+					alt: String(item.alt || '')
 				};
 			}
 		}
@@ -576,7 +558,7 @@ const images = [
 				libEntry.versionsMap.set(version, []);
 			}
 
-			// Look up predefined alt and figcaption metadata for image assets
+			// Look up predefined alt metadata for image assets
 			const predefinedMeta =
 				type === 'img' ? findPredefinedImageMeta(relativePath, fileName) : null;
 
@@ -589,9 +571,7 @@ const images = [
 					relativePath,
 					size: item.size || null,
 					lastModified: item.lastModified || null,
-					predefinedAlt: predefinedMeta ? predefinedMeta.alt : '',
-					predefinedFigcaption: predefinedMeta ? predefinedMeta.figcaption : '',
-					hasPredefinedMatch: Boolean(predefinedMeta)
+					predefinedAlt: predefinedMeta ? predefinedMeta.alt : ''
 				});
 			}
 		});
@@ -743,7 +723,7 @@ const images = [
 
 				const matchingFiles = verObj.files.filter((file) => {
 					if (!query) return true;
-					const haystack = `${lib.displayName} ${lib.slug} ${lib.type} ${verObj.version} ${file.fileName} ${file.relativePath} ${file.predefinedAlt} ${file.predefinedFigcaption}`.toLowerCase();
+					const haystack = `${lib.displayName} ${lib.slug} ${lib.type} ${verObj.version} ${file.fileName} ${file.relativePath} ${file.predefinedAlt}`.toLowerCase();
 					const tokens = query.split(/\s+/);
 					return tokens.every((token) => haystack.includes(token));
 				});
@@ -808,11 +788,10 @@ const images = [
 						const sizeBadge = file.size ? ` &bull; ${formatBytes(file.size)}` : '';
 						const isImage = lib.type === 'img';
 
-						// Version badge (for flat images where version === 'latest', show 'CDN IMAGE')
-						const versionPillLabel =
-							isImage && verObj.version === 'latest'
-								? 'IMAGE'
-								: `v${verObj.version}`;
+						// Version pill (shown only for JS/CSS or versioned assets; hidden for flat images)
+						const versionPillHtml = isImage
+							? ''
+							: `<span class="version-pill">${escapeHtml(`v${verObj.version}`)}</span>`;
 
 						// Thumbnail preview for image rows
 						const thumbnailHtml = isImage
@@ -821,34 +800,24 @@ const images = [
 							   </div>`
 							: '';
 
-						// Display predefined alt summary on image rows so users see the approved metadata immediately
-						const predefinedMetaSummaryHtml = isImage
-							? file.hasPredefinedMatch
-								? `<span class="file-meta-sub">Predefined <code>alt</code>: &ldquo;${escapeHtml(file.predefinedAlt)}&rdquo;</span>`
-								: `<span class="file-meta-sub" style="color: #fbbf24;">Note: Add this image to the <code>images[]</code> array in <code>js/site.js</code></span>`
-							: '';
-
 						// Primary HTML tag action button:
 						// - For JS/CSS: immediate "Copy <script>" or "Copy <link>"
-						// - For Images: "Generate Tag" button that opens the modal pre-populated with `images[]` metadata
+						// - For Images: "Generate Tag" button (same button style) that opens the modal with the predefined `<img>` tag
 						let primaryTagActionButtonHtml = '';
 						if (isImage) {
 							primaryTagActionButtonHtml = `
 								<button
 									type="button"
-									class="btn-action btn-generate-tag"
+									class="btn-action"
 									data-open-img-modal="true"
 									data-img-url="${escapeAttr(fullUrl)}"
 									data-img-name="${escapeAttr(file.fileName)}"
 									data-img-alt="${escapeAttr(file.predefinedAlt)}"
-									data-img-figcaption="${escapeAttr(file.predefinedFigcaption)}"
-									data-img-has-meta="${file.hasPredefinedMatch ? 'true' : 'false'}"
-									title="Open modal to generate <img> or <figure> HTML tag with predefined metadata"
+									title="Open modal to copy ready-to-use <img> HTML tag"
 								>
 									<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-										<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-										<circle cx="8.5" cy="8.5" r="1.5"></circle>
-										<polyline points="21 15 16 10 5 21"></polyline>
+										<polyline points="16 18 22 12 16 6"></polyline>
+										<polyline points="8 6 2 12 8 18"></polyline>
 									</svg>
 									Generate Tag
 								</button>`;
@@ -875,11 +844,10 @@ const images = [
 						<div class="file-row">
 							<div class="file-info">
 								${thumbnailHtml}
-								<span class="version-pill">${escapeHtml(versionPillLabel)}</span>
+								${versionPillHtml}
 								<div class="file-path-box">
 									<span class="file-name">${escapeHtml(file.fileName)}</span>
 									<span class="file-url">${escapeHtml(fullUrl)}${sizeBadge}</span>
-									${predefinedMetaSummaryHtml}
 								</div>
 							</div>
 							<div class="file-actions">
@@ -918,11 +886,6 @@ const images = [
 			)
 			.join('');
 
-		const folderSubtitle =
-			lib.type === 'img' && lib.slug === 'general'
-				? '/img/cdn/'
-				: `/${lib.type}/cdn/${lib.slug}/`;
-
 		const versionControlsHtml = hasMultipleOrNamedVersions
 			? `<div class="card-controls">
 					<label class="version-label" for="ver-${escapeAttr(lib.key)}">Version:</label>
@@ -942,7 +905,6 @@ const images = [
 				<div class="library-title-group">
 					<span class="type-badge ${typeClass}">${typeLabel}</span>
 					<h3 class="library-name">${escapeHtml(lib.displayName)}</h3>
-					<span class="library-folder">${escapeHtml(folderSubtitle)}</span>
 				</div>
 				${versionControlsHtml}
 			</div>
@@ -953,40 +915,32 @@ const images = [
 	}
 
 	/* ==========================================================================
-	   9. IMAGE TAG GENERATOR MODAL LOGIC (PREDEFINED METADATA ARRAY EDITION)
+	   9. IMAGE TAG GENERATOR MODAL LOGIC
 	   ========================================================================== */
 
 	/**
 	 * Opens the "Generate Image HTML Tag" modal for a selected CDN image asset,
-	 * automatically pre-populating the `alt` and `figcaption` inputs from the
-	 * `images` array.
+	 * displaying the ready-to-copy `<img>` HTML tag populated with the predefined
+	 * `alt` text from the `images` array.
 	 *
 	 * @param {object} params
-	 * @param {string} params.fileUrl           - Full CDN URL to the image
-	 * @param {string} params.fileName          - File name (e.g. `jhm-logo.png`)
-	 * @param {string} params.predefinedAlt     - Predefined `alt` text from `images[]`
-	 * @param {string} params.predefinedCaption - Predefined `figcaption` text from `images[]`
-	 * @param {boolean} params.hasPredefined    - Whether the image was found in `images[]`
-	 * @param {HTMLElement} params.triggerEl    - Button element that triggered the modal
+	 * @param {string} params.fileUrl       - Full CDN URL to the image
+	 * @param {string} params.fileName      - File name (e.g. `jhm-logo.png`)
+	 * @param {string} params.predefinedAlt - Predefined `alt` text from `images[]`
+	 * @param {HTMLElement} params.triggerEl - Button element that triggered the modal
 	 */
 	function openImageTagModal({
 		fileUrl,
 		fileName,
 		predefinedAlt,
-		predefinedCaption,
-		hasPredefined,
 		triggerEl
 	}) {
 		if (!dom.imgTagModalBackdrop) return;
 
 		state.modal.isOpen = true;
-		state.modal.mode = 'img';
 		state.modal.fileUrl = fileUrl;
 		state.modal.fileName = fileName;
 		state.modal.predefinedAlt = predefinedAlt || '';
-		state.modal.predefinedFigcaption = predefinedCaption || '';
-		state.modal.hasPredefinedMatch = Boolean(hasPredefined);
-		state.modal.isUnlockedForCustomEdit = !hasPredefined;
 		state.modal.lastFocusedElement = triggerEl || document.activeElement;
 
 		// Populate image preview bar
@@ -995,92 +949,17 @@ const images = [
 		dom.modalImgName.textContent = fileName;
 		dom.modalImgUrl.textContent = fileUrl;
 
-		// Update predefined status badge
-		if (dom.modalPredefinedBadge) {
-			if (hasPredefined) {
-				dom.modalPredefinedBadge.textContent = 'Predefined Metadata Loaded';
-				dom.modalPredefinedBadge.className = 'predefined-badge predefined-badge-ok';
-			} else {
-				dom.modalPredefinedBadge.textContent = 'Not Found in images[] Array';
-				dom.modalPredefinedBadge.className = 'predefined-badge predefined-badge-warn';
-			}
-		}
-
-		// Pre-populate inputs with predefined values from the `images` array
-		dom.modalAltInput.value = state.modal.predefinedAlt;
-		dom.modalCaptionInput.value = state.modal.predefinedFigcaption;
-
-		// Apply read-only lock state (locked by default when predefined metadata exists)
-		syncModalReadonlyLockUI();
-
-		// Set initial mode to "<img> tag only" and render the pre-populated HTML tag preview
-		setModalTagMode('img');
+		// Render the generated <img> HTML tag preview
+		updateModalLivePreview();
 
 		// Show modal
 		dom.imgTagModalBackdrop.classList.remove('hidden');
 		dom.imgTagModalBackdrop.setAttribute('aria-hidden', 'false');
 
-		// Focus the primary format toggle button or Copy button for quick keyboard use
+		// Focus the Copy Generated Tag button for quick keyboard use
 		setTimeout(() => {
-			if (dom.modeImgOnlyBtn) dom.modeImgOnlyBtn.focus();
+			if (dom.copyModalTagBtn) dom.copyModalTagBtn.focus();
 		}, 20);
-	}
-
-	/**
-	 * Synchronizes the read-only vs. unlocked state of the Alt and Figcaption inputs.
-	 */
-	function syncModalReadonlyLockUI() {
-		const isUnlocked = state.modal.isUnlockedForCustomEdit;
-
-		if (dom.modalAltInput) {
-			dom.modalAltInput.readOnly = !isUnlocked;
-			dom.modalAltInput.classList.toggle('is-readonly', !isUnlocked);
-		}
-		if (dom.modalCaptionInput) {
-			dom.modalCaptionInput.readOnly = !isUnlocked;
-			dom.modalCaptionInput.classList.toggle('is-readonly', !isUnlocked);
-		}
-
-		if (dom.toggleEditPredefinedBtn) {
-			dom.toggleEditPredefinedBtn.setAttribute('aria-pressed', isUnlocked ? 'true' : 'false');
-			dom.toggleEditPredefinedBtn.classList.toggle('unlocked', isUnlocked);
-			dom.toggleEditPredefinedBtn.textContent = isUnlocked
-				? 'Reset to Predefined'
-				: 'Unlock to Customize';
-		}
-
-		if (dom.modalLockStatusText) {
-			if (!state.modal.hasPredefinedMatch) {
-				dom.modalLockStatusText.innerHTML =
-					'No entry in <code>images[]</code> array &mdash; custom input enabled';
-			} else if (isUnlocked) {
-				dom.modalLockStatusText.innerHTML =
-					'Custom override active (click <strong>Reset to Predefined</strong> to restore)';
-			} else {
-				dom.modalLockStatusText.innerHTML =
-					'Using predefined values from <code>images[]</code> array';
-			}
-		}
-	}
-
-	/**
-	 * Toggles between locked predefined metadata (`images[]`) and custom editing.
-	 * When locking back ("Reset to Predefined"), restores the official predefined
-	 * `alt` and `figcaption` strings from `images[]`.
-	 */
-	function toggleModalPredefinedLock() {
-		state.modal.isUnlockedForCustomEdit = !state.modal.isUnlockedForCustomEdit;
-
-		if (!state.modal.isUnlockedForCustomEdit) {
-			// Restore official predefined values from `images[]`
-			dom.modalAltInput.value = state.modal.predefinedAlt;
-			dom.modalCaptionInput.value = state.modal.predefinedFigcaption;
-		} else {
-			dom.modalAltInput.focus();
-		}
-
-		syncModalReadonlyLockUI();
-		updateModalLivePreview();
 	}
 
 	/**
@@ -1100,55 +979,19 @@ const images = [
 	}
 
 	/**
-	 * Switches the modal between:
-	 *   - `'img'`: `<img>` tag only
-	 *   - `'figure'`: `<img>` with `<figure>` and `<figcaption>`
+	 * Builds the `<img>` HTML snippet for the modal using the image's CDN URL
+	 * and its predefined `alt` attribute from the `images` array.
 	 *
-	 * @param {'img' | 'figure'} mode
-	 */
-	function setModalTagMode(mode) {
-		state.modal.mode = mode === 'figure' ? 'figure' : 'img';
-		const isFigure = state.modal.mode === 'figure';
-
-		// Update toggle button states
-		if (dom.modeImgOnlyBtn && dom.modeFigureBtn) {
-			dom.modeImgOnlyBtn.classList.toggle('active', !isFigure);
-			dom.modeImgOnlyBtn.setAttribute('aria-pressed', !isFigure ? 'true' : 'false');
-
-			dom.modeFigureBtn.classList.toggle('active', isFigure);
-			dom.modeFigureBtn.setAttribute('aria-pressed', isFigure ? 'true' : 'false');
-		}
-
-		// Show or hide the <figcaption> input field
-		if (dom.modalCaptionGroup) {
-			dom.modalCaptionGroup.classList.toggle('hidden', !isFigure);
-		}
-
-		updateModalLivePreview();
-	}
-
-	/**
-	 * Builds the live HTML snippet for the modal based on the current mode,
-	 * `alt` text input, and `figcaption` text input.
-	 *
-	 * @returns {string} Ready-to-copy HTML snippet
+	 * @returns {string} Ready-to-copy `<img>` HTML tag
 	 */
 	function buildModalImageHtmlSnippet() {
 		const url = state.modal.fileUrl;
-		const altText = dom.modalAltInput ? dom.modalAltInput.value : '';
-		const captionText = dom.modalCaptionInput ? dom.modalCaptionInput.value : '';
-
-		const imgTag = `<img src="${escapeAttr(url)}" alt="${escapeAttr(altText)}" loading="lazy">`;
-
-		if (state.modal.mode === 'figure') {
-			return `<figure>\n  ${imgTag}\n  <figcaption>${escapeHtml(captionText)}</figcaption>\n</figure>`;
-		}
-
-		return imgTag;
+		const altText = state.modal.predefinedAlt;
+		return `<img src="${escapeAttr(url)}" alt="${escapeAttr(altText)}" loading="lazy">`;
 	}
 
 	/**
-	 * Updates the `<code id="modalCodeOutput">` preview box in real time.
+	 * Updates the `<code id="modalCodeOutput">` preview box.
 	 */
 	function updateModalLivePreview() {
 		if (!dom.modalCodeOutput) return;
@@ -1401,8 +1244,6 @@ const images = [
 					fileUrl: modalTriggerBtn.getAttribute('data-img-url') || '',
 					fileName: modalTriggerBtn.getAttribute('data-img-name') || '',
 					predefinedAlt: modalTriggerBtn.getAttribute('data-img-alt') || '',
-					predefinedCaption: modalTriggerBtn.getAttribute('data-img-figcaption') || '',
-					hasPredefined: modalTriggerBtn.getAttribute('data-img-has-meta') === 'true',
 					triggerEl: modalTriggerBtn
 				});
 				return;
@@ -1417,27 +1258,6 @@ const images = [
 
 		// Modal Event Listeners
 		if (dom.imgTagModalBackdrop) {
-			// Toggle between `<img> tag only` and `<img> with <figure> and <figcaption>`
-			if (dom.modeImgOnlyBtn) {
-				dom.modeImgOnlyBtn.addEventListener('click', () => setModalTagMode('img'));
-			}
-			if (dom.modeFigureBtn) {
-				dom.modeFigureBtn.addEventListener('click', () => setModalTagMode('figure'));
-			}
-
-			// Toggle Lock / Unlock to customize predefined metadata
-			if (dom.toggleEditPredefinedBtn) {
-				dom.toggleEditPredefinedBtn.addEventListener('click', toggleModalPredefinedLock);
-			}
-
-			// Real-time live preview updates if user unlocks and edits Alt or Figcaption fields
-			if (dom.modalAltInput) {
-				dom.modalAltInput.addEventListener('input', updateModalLivePreview);
-			}
-			if (dom.modalCaptionInput) {
-				dom.modalCaptionInput.addEventListener('input', updateModalLivePreview);
-			}
-
 			// Close modal buttons & backdrop click
 			if (dom.closeImgModalBtn) {
 				dom.closeImgModalBtn.addEventListener('click', closeImageTagModal);
